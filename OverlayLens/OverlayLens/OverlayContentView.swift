@@ -56,7 +56,7 @@ struct OverlayContentView: View {
                     .foregroundStyle(.secondary)
                 Text("Screen recording permission required")
                     .font(.callout.weight(.semibold))
-                Text("Enable OverlayLens in System Settings > Privacy & Security > Screen & System Audio Recording, then click the lens again.")
+                Text("Enable OverlayLens in System Settings > Privacy & Security > Screen & System Audio Recording. If macOS asks, choose \"Quit & Reopen\".")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

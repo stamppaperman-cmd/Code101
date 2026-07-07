@@ -41,6 +41,7 @@ final class OverlayViewModel: ObservableObject {
     private let engine = CaptureEngine()
     private var lastRecognizedText: String?
     private var restartTask: Task<Void, Never>?
+    private var permissionPollTask: Task<Void, Never>?
 
     /// OCR results waiting to be translated. Buffering keeps only the newest
     /// text so translation never lags behind the screen.
@@ -78,12 +79,32 @@ final class OverlayViewModel: ObservableObject {
         } else {
             status = .needsPermission
             CGRequestScreenCaptureAccess()
+            beginPermissionPolling()
         }
     }
 
     func appDidBecomeActive() {
         if status == .needsPermission, CGPreflightScreenCaptureAccess() {
             startCapture(after: .zero)
+        }
+    }
+
+    /// The panel is non-activating, so the app may never regain focus after
+    /// the user grants permission in System Settings — poll instead and start
+    /// automatically once the grant appears.
+    private func beginPermissionPolling() {
+        permissionPollTask?.cancel()
+        permissionPollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard let self, !Task.isCancelled else { return }
+                if CGPreflightScreenCaptureAccess() {
+                    if self.isLensVisible {
+                        self.startCapture(after: .zero)
+                    }
+                    return
+                }
+            }
         }
     }
 
@@ -131,6 +152,7 @@ final class OverlayViewModel: ObservableObject {
     // MARK: - Capture lifecycle
 
     private func startCapture(after delay: Duration) {
+        permissionPollTask?.cancel()
         restartTask?.cancel()
         restartTask = Task { [weak self] in
             if delay > .zero {
@@ -149,7 +171,14 @@ final class OverlayViewModel: ObservableObject {
             try await engine.start(geometry)
             status = .running
         } catch {
-            status = .failed("Live translation paused — \(error.localizedDescription)")
+            // The grant may have been revoked (e.g. the app was rebuilt);
+            // fall back to the permission flow instead of a dead error state.
+            if !CGPreflightScreenCaptureAccess() {
+                status = .needsPermission
+                beginPermissionPolling()
+            } else {
+                status = .failed("Live translation paused — \(error.localizedDescription)")
+            }
         }
     }
 

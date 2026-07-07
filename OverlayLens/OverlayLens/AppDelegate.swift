@@ -3,12 +3,19 @@ import AppKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: OverlayPanel?
-    private let viewModel = OverlayViewModel()
+    let viewModel = OverlayViewModel()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let panel = OverlayPanel(viewModel: viewModel)
         self.panel = panel
         viewModel.panelFrameProvider = { [weak panel] in panel?.frame ?? .zero }
+        viewModel.panelVisibilityHandler = { [weak panel] visible in
+            if visible {
+                panel?.orderFrontRegardless()
+            } else {
+                panel?.orderOut(nil)
+            }
+        }
         panel.orderFrontRegardless()
 
         viewModel.checkPermissionAndStart()

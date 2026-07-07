@@ -23,10 +23,20 @@ final class OverlayViewModel: ObservableObject {
     /// True until the first frame after a (re)start arrives; drives the
     /// one-shot loading indicator so the live overlay doesn't flicker.
     @Published private(set) var awaitingFirstFrame = true
+    @Published private(set) var isLensVisible = true
+    /// Alpha of the glass background (0 = fully see-through, 1 = full HUD
+    /// material). Persisted across launches.
+    @Published var glassOpacity: Double {
+        didSet { UserDefaults.standard.set(glassOpacity, forKey: Self.glassOpacityKey) }
+    }
+
+    private static let glassOpacityKey = "glassOpacity"
 
     /// Supplied by AppDelegate; returns the panel's current frame in global
     /// screen coordinates.
     var panelFrameProvider: () -> NSRect = { .zero }
+    /// Supplied by AppDelegate; orders the panel in or out.
+    var panelVisibilityHandler: ((Bool) -> Void)?
 
     private let engine = CaptureEngine()
     private var lastRecognizedText: String?
@@ -38,6 +48,8 @@ final class OverlayViewModel: ObservableObject {
     private let textContinuation: AsyncStream<String>.Continuation
 
     init() {
+        glassOpacity = UserDefaults.standard.object(forKey: Self.glassOpacityKey) as? Double ?? 0.85
+
         var continuation: AsyncStream<String>.Continuation!
         textStream = AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation = $0 }
         textContinuation = continuation
@@ -72,6 +84,30 @@ final class OverlayViewModel: ObservableObject {
     func appDidBecomeActive() {
         if status == .needsPermission, CGPreflightScreenCaptureAccess() {
             startCapture(after: .zero)
+        }
+    }
+
+    // MARK: - Visibility
+
+    func setLensVisible(_ visible: Bool) {
+        guard visible != isLensVisible else { return }
+        isLensVisible = visible
+        panelVisibilityHandler?(visible)
+        if visible {
+            if status == .needsPermission {
+                checkPermissionAndStart()
+            } else {
+                startCapture(after: .zero)
+            }
+        } else {
+            restartTask?.cancel()
+            if status != .needsPermission {
+                status = .paused
+            }
+            let engine = engine
+            Task {
+                await engine.stop()
+            }
         }
     }
 

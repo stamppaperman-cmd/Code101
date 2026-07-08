@@ -21,6 +21,24 @@ struct ARSegment: Identifiable {
     let boundingBox: CGRect
 }
 
+/// Escape hatch for when automatic per-text language detection guesses
+/// wrong on short or ambiguous text (brand names, numbers, loanwords).
+enum DirectionOverride: String, CaseIterable, Identifiable {
+    case auto
+    case forceToThai
+    case forceToEnglish
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .auto: return "Auto"
+        case .forceToThai: return "EN → TH"
+        case .forceToEnglish: return "TH → EN"
+        }
+    }
+}
+
 @MainActor
 final class OverlayViewModel: ObservableObject {
 
@@ -60,6 +78,18 @@ final class OverlayViewModel: ObservableObject {
         }
     }
     @Published private(set) var arSegments: [ARSegment] = []
+    /// Overrides automatic per-text language detection when it guesses wrong
+    /// on short/ambiguous text. Persisted across launches.
+    @Published var directionOverride: DirectionOverride {
+        didSet {
+            UserDefaults.standard.set(directionOverride.rawValue, forKey: Self.directionOverrideKey)
+            // Cached translations were made under the old direction; drop
+            // them so the next frame retranslates instead of showing stale
+            // (possibly wrong-direction) results.
+            lineTranslationCache.removeAll()
+            lastRecognizedBlob = nil
+        }
+    }
     /// Non-fatal translation problem to surface in the lens without clearing
     /// the last good translation.
     @Published private(set) var translationNote: String?
@@ -67,6 +97,7 @@ final class OverlayViewModel: ObservableObject {
     private static let glassOpacityKey = "glassOpacity"
     private static let onlineTranslationKey = "useOnlineTranslation"
     private static let arModeKey = "arModeEnabled"
+    private static let directionOverrideKey = "directionOverride"
     static let lensFrameKey = "lensFrame"
 
     /// Supplied by AppDelegate; returns the panel's current frame in global
@@ -97,6 +128,8 @@ final class OverlayViewModel: ObservableObject {
         glassOpacity = UserDefaults.standard.object(forKey: Self.glassOpacityKey) as? Double ?? 0.85
         useOnlineTranslation = UserDefaults.standard.object(forKey: Self.onlineTranslationKey) as? Bool ?? true
         arModeEnabled = UserDefaults.standard.object(forKey: Self.arModeKey) as? Bool ?? false
+        directionOverride = UserDefaults.standard.string(forKey: Self.directionOverrideKey)
+            .flatMap(DirectionOverride.init(rawValue:)) ?? .auto
 
         engine.onFrame = { [weak self] image in
             // Runs on the capture queue: keep OCR off the main thread. A nil
@@ -317,7 +350,7 @@ final class OverlayViewModel: ObservableObject {
             classicTranslationTask?.cancel()
             classicTranslationTask = Task { [weak self] in
                 guard let self else { return }
-                let toThai = LanguageDirection.targetIsThai(for: blob)
+                let toThai = self.effectiveTargetIsThai(for: blob)
                 let result = await self.translateWithFallback(blob, toThai: toThai)
                 guard !Task.isCancelled else { return }
                 if let result {
@@ -352,7 +385,7 @@ final class OverlayViewModel: ObservableObject {
             let text = line.text
             Task { [weak self] in
                 guard let self else { return }
-                let toThai = LanguageDirection.targetIsThai(for: text)
+                let toThai = self.effectiveTargetIsThai(for: text)
                 let result = await self.translateWithFallback(text, toThai: toThai)
                 self.inFlightLineTexts.remove(text)
                 guard let result else { return }
@@ -361,6 +394,18 @@ final class OverlayViewModel: ObservableObject {
                     self.arSegments[i].displayText = result
                 }
             }
+        }
+    }
+
+    /// Applies the user's direction override, if any; otherwise detects
+    /// automatically. The override is a manual escape hatch for short or
+    /// ambiguous text (brand names, numbers, loanwords) that auto-detection
+    /// occasionally guesses wrong.
+    private func effectiveTargetIsThai(for text: String) -> Bool {
+        switch directionOverride {
+        case .auto: return LanguageDirection.targetIsThai(for: text)
+        case .forceToThai: return true
+        case .forceToEnglish: return false
         }
     }
 

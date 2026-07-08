@@ -50,6 +50,22 @@ struct MenuBarControlsView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
+                Text("Direction")
+                    .font(.callout)
+                Picker("Direction", selection: $viewModel.directionOverride) {
+                    ForEach(DirectionOverride.allCases) { option in
+                        Text(option.label).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                Text("Auto picks per text; override it if a short or ambiguous line keeps guessing wrong.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text("Glass opacity")
                     Spacer()

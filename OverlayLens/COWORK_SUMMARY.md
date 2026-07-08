@@ -12,11 +12,11 @@ Built from scratch this session: a macOS menu-bar app that overlays a small floa
 
 ## Current capabilities
 - Works on any on-screen text: apps, browser, video subtitles, documents — anything Vision can OCR.
-- Bidirectional without a language picker — just point it at text in either language.
+- Bidirectional without a language picker — just point it at text in either language, including both directions in the same frame (verified: mixed EN+TH screen content translates each line correctly).
+- AR overlay mode visually verified — patches render in place, correctly positioned over the original lines.
 - Runs standalone, no App Store, Developer ID-ready distribution setup.
 
 ## Known limitations
-- AR overlay mode hasn't had a full visual QA pass yet (functionally verified via logs, not eyeballed).
 - English/Thai only — no other language pairs.
 - Fixed rectangular lens; no shape/rotation options.
 - Free translate API has no SLA — could rate-limit or change under heavy use; offline fallback exists but is lower quality.

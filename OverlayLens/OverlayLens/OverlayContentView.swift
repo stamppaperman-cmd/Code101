@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import Translation
 
@@ -8,6 +9,7 @@ struct OverlayContentView: View {
         source: kSourceLanguage,
         target: kTargetLanguage
     )
+    @State private var justCopied = false
 
     var body: some View {
         content
@@ -20,22 +22,40 @@ struct OverlayContentView: View {
                 }
             }
             .overlay(alignment: .topTrailing) {
-                // Sits in the corner DragContainerView passes through to us.
-                Button {
-                    viewModel.setLensVisible(false)
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.secondary)
+                // Sits in the strip DragContainerView passes through to us;
+                // revealed on hover only, QuickTime-style.
+                HStack(spacing: 4) {
+                    if !viewModel.translatedText.isEmpty {
+                        Button {
+                            copyTranslation()
+                        } label: {
+                            Image(systemName: justCopied ? "checkmark.circle.fill" : "doc.on.doc.fill")
+                                .font(.system(size: 13))
+                                .foregroundStyle(justCopied ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Copy translation")
+                    }
+                    Button {
+                        viewModel.setLensVisible(false)
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Hide the lens (⌥⌘L or the menu bar icon reopens it)")
                 }
-                .buttonStyle(.plain)
                 .padding(8)
-                .help("Hide the lens (reopen from the menu bar icon)")
+                .opacity(controlsVisible ? 1 : 0)
+                .animation(.easeInOut(duration: 0.15), value: controlsVisible)
             }
             .overlay(alignment: .bottomTrailing) {
                 ResizeGrip()
                     .padding(6)
                     .allowsHitTesting(false)
+                    .opacity(viewModel.isHovering ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.15), value: viewModel.isHovering)
             }
             .translationTask(configuration) { session in
                 await viewModel.runTranslationLoop(session)
@@ -44,6 +64,21 @@ struct OverlayContentView: View {
 
     private var isCapturing: Bool {
         viewModel.status == .running || viewModel.status == .starting
+    }
+
+    private var controlsVisible: Bool {
+        viewModel.isHovering || justCopied
+    }
+
+    private func copyTranslation() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(viewModel.translatedText, forType: .string)
+        justCopied = true
+        Task {
+            try? await Task.sleep(for: .seconds(1.2))
+            justCopied = false
+        }
     }
 
     @ViewBuilder
@@ -56,9 +91,16 @@ struct OverlayContentView: View {
                     .foregroundStyle(.secondary)
                 Text("Screen recording permission required")
                     .font(.callout.weight(.semibold))
-                Text("Enable OverlayLens in System Settings > Privacy & Security > Screen & System Audio Recording. If macOS asks, choose \"Quit & Reopen\".")
+                Text("Enable OverlayLens under Screen & System Audio Recording. If macOS asks, choose \"Quit & Reopen\".")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Button("Open System Settings") {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
             }
             .multilineTextAlignment(.center)
             .padding(16)

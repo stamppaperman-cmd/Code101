@@ -19,11 +19,17 @@ struct MenuBarControlsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Toggle("Show lens", isOn: Binding(
-                get: { viewModel.isLensVisible },
-                set: { viewModel.setLensVisible($0) }
-            ))
-            .toggleStyle(.switch)
+            HStack {
+                Toggle("Show lens", isOn: Binding(
+                    get: { viewModel.isLensVisible },
+                    set: { viewModel.setLensVisible($0) }
+                ))
+                .toggleStyle(.switch)
+                Spacer()
+                Text("⌥⌘L")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {

@@ -8,7 +8,7 @@ import SwiftUI
 final class OverlayPanel: NSPanel {
     static let defaultLensSize = NSSize(width: 300, height: 180)
 
-    private var opacityCancellable: AnyCancellable?
+    private var cancellables = Set<AnyCancellable>()
 
     init(viewModel: OverlayViewModel) {
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
@@ -38,6 +38,7 @@ final class OverlayPanel: NSPanel {
         container.layer?.masksToBounds = true
         container.onDragStart = { [weak viewModel] in viewModel?.dragBegan() }
         container.onDragEnd = { [weak viewModel] in viewModel?.dragEnded() }
+        container.onHoverChange = { [weak viewModel] hovering in viewModel?.setHovering(hovering) }
 
         let effectView = NSVisualEffectView(frame: container.bounds)
         effectView.material = .hudWindow
@@ -54,11 +55,23 @@ final class OverlayPanel: NSPanel {
         contentView = container
 
         effectView.alphaValue = viewModel.glassOpacity
-        opacityCancellable = viewModel.$glassOpacity
+        viewModel.$glassOpacity
             .receive(on: RunLoop.main)
             .sink { [weak effectView] opacity in
                 effectView?.alphaValue = opacity
             }
+            .store(in: &cancellables)
+
+        // While asking for permission the lens shows a real button, so mouse
+        // events must reach SwiftUI instead of being eaten by the drag handle.
+        viewModel.$status
+            .map { $0 == .needsPermission }
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak container] needsPermission in
+                container?.permissionMode = needsPermission
+            }
+            .store(in: &cancellables)
     }
 }
 
@@ -71,20 +84,32 @@ final class DragContainerView: NSView {
 
     var onDragStart: (() -> Void)?
     var onDragEnd: (() -> Void)?
+    var onHoverChange: ((Bool) -> Void)?
+    /// While the permission message (with its button) is showing, most of the
+    /// surface passes events through to SwiftUI instead of dragging.
+    var permissionMode = false
 
     private enum DragMode { case move, resize }
     private let resizeGripHitSize: CGFloat = 24
-    private let closeButtonHitSize: CGFloat = 32
+    /// Top-right strip hosting the SwiftUI copy + close buttons.
+    private let controlStripSize = NSSize(width: 68, height: 34)
+    private let permissionDragBandHeight: CGFloat = 24
 
     private var dragMode: DragMode = .move
     private var initialMouseLocation: NSPoint = .zero
     private var initialWindowFrame: NSRect = .zero
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        // The whole lens surface is a drag handle, except the top-right
-        // corner where the SwiftUI close button lives.
         let local = convert(point, from: superview)
-        if local.x > bounds.width - closeButtonHitSize, local.y > bounds.height - closeButtonHitSize {
+        if permissionMode {
+            // Keep a drag band along the top edge; the rest goes to SwiftUI
+            // so the "Open System Settings" button is clickable.
+            return local.y > bounds.height - permissionDragBandHeight ? self : super.hitTest(point)
+        }
+        // The whole lens surface is a drag handle, except the top-right
+        // corner where the SwiftUI control buttons live.
+        if local.x > bounds.width - controlStripSize.width,
+           local.y > bounds.height - controlStripSize.height {
             return super.hitTest(point)
         }
         return self
@@ -92,6 +117,27 @@ final class DragContainerView: NSView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        // .activeAlways: the panel is non-activating, so app-active-only
+        // tracking would never fire.
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        ))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onHoverChange?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onHoverChange?(false)
     }
 
     override func mouseDown(with event: NSEvent) {

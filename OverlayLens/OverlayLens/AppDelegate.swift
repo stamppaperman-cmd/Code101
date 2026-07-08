@@ -3,6 +3,7 @@ import AppKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: OverlayPanel?
+    private var hotKeyManager: HotKeyManager?
     let viewModel = OverlayViewModel()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -17,6 +18,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         panel.orderFrontRegardless()
+
+        hotKeyManager = HotKeyManager { [weak self] in
+            Task { @MainActor in
+                self?.viewModel.toggleLens()
+            }
+        }
 
         viewModel.checkPermissionAndStart()
 

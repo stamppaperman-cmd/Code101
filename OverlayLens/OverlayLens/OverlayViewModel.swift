@@ -24,6 +24,9 @@ final class OverlayViewModel: ObservableObject {
     /// one-shot loading indicator so the live overlay doesn't flicker.
     @Published private(set) var awaitingFirstFrame = true
     @Published private(set) var isLensVisible = true
+    /// Mouse is over the lens (tracked by DragContainerView); reveals the
+    /// hover-only controls.
+    @Published private(set) var isHovering = false
     /// Alpha of the glass background (0 = fully see-through, 1 = full HUD
     /// material). Persisted across launches.
     @Published var glassOpacity: Double {
@@ -109,6 +112,16 @@ final class OverlayViewModel: ObservableObject {
     }
 
     // MARK: - Visibility
+
+    func toggleLens() {
+        setLensVisible(!isLensVisible)
+    }
+
+    func setHovering(_ hovering: Bool) {
+        if isHovering != hovering {
+            isHovering = hovering
+        }
+    }
 
     func setLensVisible(_ visible: Bool) {
         guard visible != isLensVisible else { return }

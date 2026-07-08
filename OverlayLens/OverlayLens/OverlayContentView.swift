@@ -5,15 +5,19 @@ import Translation
 struct OverlayContentView: View {
     @ObservedObject var viewModel: OverlayViewModel
 
-    // Two fixed-direction Apple sessions kept alive for the on-device
-    // fallback; LanguageDirection picks which one a given piece of text uses.
-    @State private var configToThai = TranslationSession.Configuration(
+    // Three fixed-direction Apple sessions kept alive for the on-device
+    // fallback; effectivePair() picks which one a given piece of text uses.
+    @State private var configEnToThai = TranslationSession.Configuration(
         source: kEnglishLanguage,
         target: kThaiLanguage
     )
-    @State private var configToEnglish = TranslationSession.Configuration(
+    @State private var configThaiToEn = TranslationSession.Configuration(
         source: kThaiLanguage,
         target: kEnglishLanguage
+    )
+    @State private var configZhToThai = TranslationSession.Configuration(
+        source: kChineseLanguage,
+        target: kThaiLanguage
     )
     @State private var justCopied = false
 
@@ -74,12 +78,16 @@ struct OverlayContentView: View {
                     .opacity(viewModel.isHovering ? 1 : 0)
                     .animation(.easeInOut(duration: 0.15), value: viewModel.isHovering)
             }
-            .translationTask(configToThai) { session in
-                viewModel.attachThaiSession(session)
+            .translationTask(configEnToThai) { session in
+                viewModel.attachSession(session, source: "en", target: "th")
                 await viewModel.keepSessionAlive()
             }
-            .translationTask(configToEnglish) { session in
-                viewModel.attachEnglishSession(session)
+            .translationTask(configThaiToEn) { session in
+                viewModel.attachSession(session, source: "th", target: "en")
+                await viewModel.keepSessionAlive()
+            }
+            .translationTask(configZhToThai) { session in
+                viewModel.attachSession(session, source: "zh", target: "th")
                 await viewModel.keepSessionAlive()
             }
     }
@@ -215,7 +223,7 @@ struct OverlayContentView: View {
     }
 
     private var placeholder: String {
-        viewModel.status == .paused ? "Repositioning…" : "Point the lens at English or Thai text…"
+        viewModel.status == .paused ? "Repositioning…" : "Point the lens at English, Thai, or Chinese text…"
     }
 }
 

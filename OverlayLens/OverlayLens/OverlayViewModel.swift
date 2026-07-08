@@ -4,10 +4,12 @@ import CoreGraphics
 import os
 import Translation
 
-// Fixed language pair for the two Apple Translation fallback sessions;
-// direction between them is picked per piece of text (see LanguageDirection).
+// Fixed language pairs for the Apple Translation fallback sessions; the
+// actual pair used per piece of text is picked automatically (see
+// DetectedSourceLanguage) or via the user's DirectionOverride.
 let kEnglishLanguage = Locale.Language(identifier: "en")
 let kThaiLanguage = Locale.Language(identifier: "th")
+let kChineseLanguage = Locale.Language(identifier: "zh-Hans")
 
 private let log = Logger(subsystem: "com.overlaylens.OverlayLens", category: "pipeline")
 
@@ -25,16 +27,28 @@ struct ARSegment: Identifiable {
 /// wrong on short or ambiguous text (brand names, numbers, loanwords).
 enum DirectionOverride: String, CaseIterable, Identifiable {
     case auto
-    case forceToThai
-    case forceToEnglish
+    case forceEnToThai
+    case forceThaiToEn
+    case forceZhToThai
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
         case .auto: return "Auto"
-        case .forceToThai: return "EN → TH"
-        case .forceToEnglish: return "TH → EN"
+        case .forceEnToThai: return "EN → TH"
+        case .forceThaiToEn: return "TH → EN"
+        case .forceZhToThai: return "ZH → TH"
+        }
+    }
+
+    /// Explicit (source, target) language codes, or nil to detect automatically.
+    var pair: (source: String, target: String)? {
+        switch self {
+        case .auto: return nil
+        case .forceEnToThai: return ("en", "th")
+        case .forceThaiToEn: return ("th", "en")
+        case .forceZhToThai: return ("zh", "th")
         }
     }
 }
@@ -112,10 +126,9 @@ final class OverlayViewModel: ObservableObject {
 
     // MARK: Translation pipeline state
 
-    private var thaiSession: TranslationSession?
-    private var englishSession: TranslationSession?
-    private var thaiSessionPrepared = false
-    private var englishSessionPrepared = false
+    /// On-device fallback sessions keyed by "source-target" (e.g. "en-th").
+    private var translationSessions: [String: TranslationSession] = [:]
+    private var preparedSessionKeys: Set<String> = []
 
     private var lastRecognizedBlob: String?
     private var classicTranslationTask: Task<Void, Never>?
@@ -311,17 +324,14 @@ final class OverlayViewModel: ObservableObject {
 
     // MARK: - Apple Translation session lifecycle
 
-    /// Called from the view's translationTask closures. Sessions stay valid
-    /// as long as those tasks keep running, so we can use them ad hoc from
-    /// the per-line/per-blob translation tasks below.
-    func attachThaiSession(_ session: TranslationSession) {
-        thaiSession = session
-        thaiSessionPrepared = false
-    }
-
-    func attachEnglishSession(_ session: TranslationSession) {
-        englishSession = session
-        englishSessionPrepared = false
+    /// Called from the view's translationTask closures, one per (source,
+    /// target) pair. Sessions stay valid as long as those tasks keep
+    /// running, so we can use them ad hoc from the per-line/per-blob
+    /// translation tasks below.
+    func attachSession(_ session: TranslationSession, source: String, target: String) {
+        let key = "\(source)-\(target)"
+        translationSessions[key] = session
+        preparedSessionKeys.remove(key)
     }
 
     /// Parks for the life of the enclosing translationTask so the attached
@@ -350,8 +360,8 @@ final class OverlayViewModel: ObservableObject {
             classicTranslationTask?.cancel()
             classicTranslationTask = Task { [weak self] in
                 guard let self else { return }
-                let toThai = self.effectiveTargetIsThai(for: blob)
-                let result = await self.translateWithFallback(blob, toThai: toThai)
+                let pair = self.effectivePair(for: blob)
+                let result = await self.translateWithFallback(blob, source: pair.source, target: pair.target)
                 guard !Task.isCancelled else { return }
                 if let result {
                     self.translatedText = result
@@ -385,8 +395,8 @@ final class OverlayViewModel: ObservableObject {
             let text = line.text
             Task { [weak self] in
                 guard let self else { return }
-                let toThai = self.effectiveTargetIsThai(for: text)
-                let result = await self.translateWithFallback(text, toThai: toThai)
+                let pair = self.effectivePair(for: text)
+                let result = await self.translateWithFallback(text, source: pair.source, target: pair.target)
                 self.inFlightLineTexts.remove(text)
                 guard let result else { return }
                 self.lineTranslationCache[text] = result
@@ -397,22 +407,24 @@ final class OverlayViewModel: ObservableObject {
         }
     }
 
-    /// Applies the user's direction override, if any; otherwise detects
-    /// automatically. The override is a manual escape hatch for short or
-    /// ambiguous text (brand names, numbers, loanwords) that auto-detection
-    /// occasionally guesses wrong.
-    private func effectiveTargetIsThai(for text: String) -> Bool {
-        switch directionOverride {
-        case .auto: return LanguageDirection.targetIsThai(for: text)
-        case .forceToThai: return true
-        case .forceToEnglish: return false
+    /// Applies the user's direction override, if any; otherwise detects the
+    /// source language automatically and picks its translation target:
+    /// Thai -> English, Chinese -> Thai, anything else -> Thai. The override
+    /// is a manual escape hatch for short or ambiguous text (brand names,
+    /// numbers, loanwords) that auto-detection occasionally guesses wrong.
+    private func effectivePair(for text: String) -> (source: String, target: String) {
+        if let pair = directionOverride.pair { return pair }
+        switch DetectedSourceLanguage.detect(for: text) {
+        case .thai: return ("th", "en")
+        case .chinese: return ("zh", "th")
+        case .other: return ("en", "th")
         }
     }
 
     /// Tries the online translator first (when enabled), then falls back to
-    /// whichever on-device Apple session matches the requested direction.
+    /// whichever on-device Apple session matches the requested pair.
     /// Returns nil if both fail or no fallback session is ready yet.
-    private func translateWithFallback(_ text: String, toThai: Bool) async -> String? {
+    private func translateWithFallback(_ text: String, source: String, target: String) async -> String? {
         if useOnlineTranslation {
             do {
                 // Force the explicit source we already detected rather than
@@ -422,7 +434,7 @@ final class OverlayViewModel: ObservableObject {
                 // target — silently no-ops instead of translating the
                 // English part. An explicit source avoids that and still
                 // lets the model merge mixed-language text sensibly.
-                let result = try await OnlineTranslator.translate(text, source: toThai ? "en" : "th", target: toThai ? "th" : "en")
+                let result = try await OnlineTranslator.translate(text, source: source, target: target)
                 log.debug("online translation ok: chars=\(result.count, privacy: .public)")
                 return result
             } catch {
@@ -430,16 +442,13 @@ final class OverlayViewModel: ObservableObject {
             }
         }
 
-        guard let session = toThai ? thaiSession : englishSession else { return nil }
+        let key = "\(source)-\(target)"
+        guard let session = translationSessions[key] else { return nil }
         do {
-            if toThai, !thaiSessionPrepared {
+            if !preparedSessionKeys.contains(key) {
                 try await session.prepareTranslation()
-                thaiSessionPrepared = true
-                log.info("apple translation prepared (to Thai)")
-            } else if !toThai, !englishSessionPrepared {
-                try await session.prepareTranslation()
-                englishSessionPrepared = true
-                log.info("apple translation prepared (to English)")
+                preparedSessionKeys.insert(key)
+                log.info("apple translation prepared (\(key, privacy: .public))")
             }
             let result = try await session.translate(text).targetText
             log.debug("apple translation ok: chars=\(result.count, privacy: .public)")

@@ -9,13 +9,13 @@ struct RecognizedLine: Equatable {
 }
 
 enum OCRService {
-    /// Synchronous OCR; call off the main thread. Recognizes both English
-    /// and Thai so the pipeline can translate in either direction.
+    /// Synchronous OCR; call off the main thread. Recognizes English, Thai,
+    /// and Chinese so the pipeline can translate any of them.
     static func recognizeLines(in image: CGImage) throws -> [RecognizedLine] {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
-        request.recognitionLanguages = ["en-US", "th-TH"]
+        request.recognitionLanguages = ["en-US", "th-TH", "zh-Hans", "zh-Hant"]
         request.automaticallyDetectsLanguage = true
 
         try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])

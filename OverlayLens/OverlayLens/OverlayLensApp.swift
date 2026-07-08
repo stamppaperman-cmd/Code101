@@ -50,16 +50,20 @@ struct MenuBarControlsView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Direction")
-                    .font(.callout)
-                Picker("Direction", selection: $viewModel.directionOverride) {
-                    ForEach(DirectionOverride.allCases) { option in
-                        Text(option.label).tag(option)
+                HStack {
+                    Text("Direction")
+                        .font(.callout)
+                    Spacer()
+                    Picker("Direction", selection: $viewModel.directionOverride) {
+                        ForEach(DirectionOverride.allCases) { option in
+                            Text(option.label).tag(option)
+                        }
                     }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                Text("Auto picks per text; override it if a short or ambiguous line keeps guessing wrong.")
+                Text("Auto detects English, Thai, or Chinese per text; override it if a short or ambiguous line keeps guessing wrong.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -31,6 +31,15 @@ struct MenuBarControlsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            VStack(alignment: .leading, spacing: 2) {
+                Toggle("Online translation", isOn: $viewModel.useOnlineTranslation)
+                    .toggleStyle(.switch)
+                Text("Better quality; falls back to on-device translation when offline.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text("Glass opacity")

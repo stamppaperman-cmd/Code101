@@ -50,6 +50,17 @@ struct OverlayContentView: View {
                 .opacity(controlsVisible ? 1 : 0)
                 .animation(.easeInOut(duration: 0.15), value: controlsVisible)
             }
+            .overlay(alignment: .bottomLeading) {
+                if let note = viewModel.translationNote {
+                    Label(note, systemImage: "wifi.exclamationmark")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .lineLimit(1)
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, 6)
+                        .allowsHitTesting(false)
+                }
+            }
             .overlay(alignment: .bottomTrailing) {
                 ResizeGrip()
                     .padding(6)

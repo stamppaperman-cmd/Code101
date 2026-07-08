@@ -11,13 +11,9 @@ final class OverlayPanel: NSPanel {
     private var cancellables = Set<AnyCancellable>()
 
     init(viewModel: OverlayViewModel) {
-        let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let origin = NSPoint(
-            x: screenFrame.midX - Self.defaultLensSize.width / 2,
-            y: screenFrame.midY - Self.defaultLensSize.height / 2
-        )
+        let contentRect = Self.restoredLensFrame() ?? Self.centeredDefaultFrame()
         super.init(
-            contentRect: NSRect(origin: origin, size: Self.defaultLensSize),
+            contentRect: contentRect,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -32,7 +28,7 @@ final class OverlayPanel: NSPanel {
         becomesKeyOnlyIfNeeded = true
         isMovable = false // dragging is handled manually by DragContainerView
 
-        let container = DragContainerView(frame: NSRect(origin: .zero, size: Self.defaultLensSize))
+        let container = DragContainerView(frame: NSRect(origin: .zero, size: contentRect.size))
         container.wantsLayer = true
         container.layer?.cornerRadius = 18
         container.layer?.masksToBounds = true
@@ -72,6 +68,33 @@ final class OverlayPanel: NSPanel {
                 container?.permissionMode = needsPermission
             }
             .store(in: &cancellables)
+    }
+
+    /// Last saved lens frame, if it is still valid and on a connected screen.
+    private static func restoredLensFrame() -> NSRect? {
+        guard let saved = UserDefaults.standard.string(forKey: OverlayViewModel.lensFrameKey) else {
+            return nil
+        }
+        let rect = NSRectFromString(saved)
+        guard rect.width >= DragContainerView.minLensSize.width,
+              rect.height >= DragContainerView.minLensSize.height,
+              rect.width <= DragContainerView.maxLensSize.width,
+              rect.height <= DragContainerView.maxLensSize.height,
+              NSScreen.screens.contains(where: { $0.frame.intersects(rect) })
+        else {
+            return nil
+        }
+        return rect
+    }
+
+    private static func centeredDefaultFrame() -> NSRect {
+        let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        return NSRect(
+            x: screenFrame.midX - defaultLensSize.width / 2,
+            y: screenFrame.midY - defaultLensSize.height / 2,
+            width: defaultLensSize.width,
+            height: defaultLensSize.height
+        )
     }
 }
 

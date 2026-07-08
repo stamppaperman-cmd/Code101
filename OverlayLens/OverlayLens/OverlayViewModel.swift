@@ -4,13 +4,22 @@ import CoreGraphics
 import os
 import Translation
 
-// Fixed translation direction for this milestone.
-let kSourceLanguageCode = "en"
-let kTargetLanguageCode = "th"
-let kSourceLanguage = Locale.Language(identifier: kSourceLanguageCode)
-let kTargetLanguage = Locale.Language(identifier: kTargetLanguageCode)
+// Fixed language pair for the two Apple Translation fallback sessions;
+// direction between them is picked per piece of text (see LanguageDirection).
+let kEnglishLanguage = Locale.Language(identifier: "en")
+let kThaiLanguage = Locale.Language(identifier: "th")
 
 private let log = Logger(subsystem: "com.overlaylens.OverlayLens", category: "pipeline")
+
+/// A translated line positioned where the original text was recognized, for
+/// AR-style in-place overlay. `boundingBox` is Vision-normalized (0...1,
+/// origin bottom-left); the view converts it using its own size.
+struct ARSegment: Identifiable {
+    let id: String
+    let originalText: String
+    var displayText: String
+    let boundingBox: CGRect
+}
 
 @MainActor
 final class OverlayViewModel: ObservableObject {
@@ -42,12 +51,22 @@ final class OverlayViewModel: ObservableObject {
     @Published var useOnlineTranslation: Bool {
         didSet { UserDefaults.standard.set(useOnlineTranslation, forKey: Self.onlineTranslationKey) }
     }
+    /// AR mode redraws each recognized line in place over the original text
+    /// instead of listing translated text in a separate block.
+    @Published var arModeEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(arModeEnabled, forKey: Self.arModeKey)
+            if !arModeEnabled { arSegments = [] }
+        }
+    }
+    @Published private(set) var arSegments: [ARSegment] = []
     /// Non-fatal translation problem to surface in the lens without clearing
     /// the last good translation.
     @Published private(set) var translationNote: String?
 
     private static let glassOpacityKey = "glassOpacity"
     private static let onlineTranslationKey = "useOnlineTranslation"
+    private static let arModeKey = "arModeEnabled"
     static let lensFrameKey = "lensFrame"
 
     /// Supplied by AppDelegate; returns the panel's current frame in global
@@ -57,30 +76,35 @@ final class OverlayViewModel: ObservableObject {
     var panelVisibilityHandler: ((Bool) -> Void)?
 
     private let engine = CaptureEngine()
-    private var lastRecognizedText: String?
     private var restartTask: Task<Void, Never>?
     private var permissionPollTask: Task<Void, Never>?
 
-    /// OCR results waiting to be translated. Buffering keeps only the newest
-    /// text so translation never lags behind the screen.
-    private let textStream: AsyncStream<String>
-    private let textContinuation: AsyncStream<String>.Continuation
+    // MARK: Translation pipeline state
+
+    private var thaiSession: TranslationSession?
+    private var englishSession: TranslationSession?
+    private var thaiSessionPrepared = false
+    private var englishSessionPrepared = false
+
+    private var lastRecognizedBlob: String?
+    private var classicTranslationTask: Task<Void, Never>?
+    /// Memoizes line -> translation so unchanged lines never get re-sent,
+    /// and so a line's overlay updates the instant its translation resolves.
+    private var lineTranslationCache: [String: String] = [:]
+    private var inFlightLineTexts: Set<String> = []
 
     init() {
         glassOpacity = UserDefaults.standard.object(forKey: Self.glassOpacityKey) as? Double ?? 0.85
         useOnlineTranslation = UserDefaults.standard.object(forKey: Self.onlineTranslationKey) as? Bool ?? true
-
-        var continuation: AsyncStream<String>.Continuation!
-        textStream = AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation = $0 }
-        textContinuation = continuation
+        arModeEnabled = UserDefaults.standard.object(forKey: Self.arModeKey) as? Bool ?? false
 
         engine.onFrame = { [weak self] image in
             // Runs on the capture queue: keep OCR off the main thread. A nil
             // result means Vision threw for this frame — skip it and keep the
             // previous translation visible.
-            let text = try? OCRService.recognizeText(in: image)
+            let lines = try? OCRService.recognizeLines(in: image)
             Task { @MainActor in
-                self?.handleRecognizedText(text)
+                self?.handleRecognizedLines(lines)
             }
         }
         engine.onError = { [weak self] message in
@@ -252,68 +276,132 @@ final class OverlayViewModel: ObservableObject {
         )
     }
 
-    // MARK: - OCR / translation pipeline
+    // MARK: - Apple Translation session lifecycle
 
-    private func handleRecognizedText(_ text: String?) {
-        if awaitingFirstFrame {
-            awaitingFirstFrame = false
-            log.info("first frame after (re)start: ocrChars=\(text?.count ?? -1, privacy: .public)")
-        }
-        guard let text, !text.isEmpty else { return }
-        // Nothing on screen changed — skip the redundant translation call.
-        guard text != lastRecognizedText else { return }
-        lastRecognizedText = text
-        log.debug("ocr text changed: chars=\(text.count, privacy: .public)")
-        textContinuation.yield(text)
+    /// Called from the view's translationTask closures. Sessions stay valid
+    /// as long as those tasks keep running, so we can use them ad hoc from
+    /// the per-line/per-blob translation tasks below.
+    func attachThaiSession(_ session: TranslationSession) {
+        thaiSession = session
+        thaiSessionPrepared = false
     }
 
-    /// Consumes OCR results for the lifetime of the translation session.
-    /// Called from OverlayContentView's translationTask. Tries the online
-    /// translator first (when enabled), then falls back to Apple's on-device
-    /// Translation; a frame where both fail is skipped, keeping the previous
-    /// translation visible.
-    func runTranslationLoop(_ session: TranslationSession) async {
-        var applePrepared = false
-        for await text in textStream {
-            var result: String?
-            var failure: String?
+    func attachEnglishSession(_ session: TranslationSession) {
+        englishSession = session
+        englishSessionPrepared = false
+    }
 
-            if useOnlineTranslation {
-                do {
-                    result = try await OnlineTranslator.translate(
-                        text,
-                        source: kSourceLanguageCode,
-                        target: kTargetLanguageCode
-                    )
-                    log.debug("online translation ok: chars=\(result?.count ?? 0, privacy: .public)")
-                } catch {
-                    failure = error.localizedDescription
-                    log.error("online translation failed: \(error.localizedDescription, privacy: .public)")
+    /// Parks for the life of the enclosing translationTask so the attached
+    /// session isn't invalidated; exits promptly on cancellation.
+    func keepSessionAlive() async {
+        try? await Task.sleep(for: .seconds(1_000_000))
+    }
+
+    // MARK: - OCR / translation pipeline
+
+    private func handleRecognizedLines(_ lines: [RecognizedLine]?) {
+        if awaitingFirstFrame {
+            awaitingFirstFrame = false
+            log.info("first frame after (re)start: lines=\(lines?.count ?? -1, privacy: .public)")
+        }
+        guard let lines, !lines.isEmpty else { return }
+
+        if arModeEnabled {
+            updateARSegments(for: lines)
+        } else {
+            let blob = lines.map(\.text).joined(separator: "\n")
+            guard blob != lastRecognizedBlob else { return }
+            lastRecognizedBlob = blob
+            log.debug("ocr text changed: chars=\(blob.count, privacy: .public)")
+
+            classicTranslationTask?.cancel()
+            classicTranslationTask = Task { [weak self] in
+                guard let self else { return }
+                let toThai = LanguageDirection.targetIsThai(for: blob)
+                let result = await self.translateWithFallback(blob, toThai: toThai)
+                guard !Task.isCancelled else { return }
+                if let result {
+                    self.translatedText = result
+                    self.translationNote = nil
+                } else {
+                    self.translationNote = "Translation failed — check your connection"
                 }
             }
+        }
+    }
 
-            if result == nil {
-                do {
-                    if !applePrepared {
-                        try await session.prepareTranslation()
-                        applePrepared = true
-                        log.info("apple translation prepared")
-                    }
-                    result = try await session.translate(text).targetText
-                    log.debug("apple translation ok: chars=\(result?.count ?? 0, privacy: .public)")
-                } catch {
-                    failure = error.localizedDescription
-                    log.error("apple translation failed: \(error.localizedDescription, privacy: .public)")
+    /// Rebuilds the AR overlay from this frame's lines, showing cached
+    /// translations instantly and the original text as a placeholder for
+    /// lines still in flight; kicks off translation for any new line text.
+    private func updateARSegments(for lines: [RecognizedLine]) {
+        if lineTranslationCache.count > 300 {
+            lineTranslationCache.removeAll()
+        }
+
+        arSegments = lines.enumerated().map { index, line in
+            ARSegment(
+                id: "\(index)_\(line.text.hashValue)",
+                originalText: line.text,
+                displayText: lineTranslationCache[line.text] ?? line.text,
+                boundingBox: line.boundingBox
+            )
+        }
+
+        for line in lines where lineTranslationCache[line.text] == nil && !inFlightLineTexts.contains(line.text) {
+            inFlightLineTexts.insert(line.text)
+            let text = line.text
+            Task { [weak self] in
+                guard let self else { return }
+                let toThai = LanguageDirection.targetIsThai(for: text)
+                let result = await self.translateWithFallback(text, toThai: toThai)
+                self.inFlightLineTexts.remove(text)
+                guard let result else { return }
+                self.lineTranslationCache[text] = result
+                for i in self.arSegments.indices where self.arSegments[i].originalText == text {
+                    self.arSegments[i].displayText = result
                 }
             }
+        }
+    }
 
-            if let result {
-                translatedText = result
-                translationNote = nil
-            } else if let failure {
-                // Keep the previous translation visible; just annotate.
-                translationNote = "Translation failed — \(failure)"
+    /// Tries the online translator first (when enabled), then falls back to
+    /// whichever on-device Apple session matches the requested direction.
+    /// Returns nil if both fail or no fallback session is ready yet.
+    private func translateWithFallback(_ text: String, toThai: Bool) async -> String? {
+        if useOnlineTranslation {
+            do {
+                // Force the explicit source we already detected rather than
+                // Google's own sl=auto: when Thai script appears anywhere in
+                // a mostly-English line, auto-detect classifies the whole
+                // string as Thai and — since that already equals a Thai
+                // target — silently no-ops instead of translating the
+                // English part. An explicit source avoids that and still
+                // lets the model merge mixed-language text sensibly.
+                let result = try await OnlineTranslator.translate(text, source: toThai ? "en" : "th", target: toThai ? "th" : "en")
+                log.debug("online translation ok: chars=\(result.count, privacy: .public)")
+                return result
+            } catch {
+                log.error("online translation failed: \(error.localizedDescription, privacy: .public)")
             }
+        }
+
+        guard let session = toThai ? thaiSession : englishSession else { return nil }
+        do {
+            if toThai, !thaiSessionPrepared {
+                try await session.prepareTranslation()
+                thaiSessionPrepared = true
+                log.info("apple translation prepared (to Thai)")
+            } else if !toThai, !englishSessionPrepared {
+                try await session.prepareTranslation()
+                englishSessionPrepared = true
+                log.info("apple translation prepared (to English)")
+            }
+            let result = try await session.translate(text).targetText
+            log.debug("apple translation ok: chars=\(result.count, privacy: .public)")
+            return result
+        } catch {
+            log.error("apple translation failed: \(error.localizedDescription, privacy: .public)")
+            return nil
         }
     }
 }

@@ -40,6 +40,15 @@ struct MenuBarControlsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            VStack(alignment: .leading, spacing: 2) {
+                Toggle("AR overlay", isOn: $viewModel.arModeEnabled)
+                    .toggleStyle(.switch)
+                Text("Redraws each line in place over the original text instead of listing it below.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text("Glass opacity")

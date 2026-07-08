@@ -5,9 +5,15 @@ import Translation
 struct OverlayContentView: View {
     @ObservedObject var viewModel: OverlayViewModel
 
-    @State private var configuration = TranslationSession.Configuration(
-        source: kSourceLanguage,
-        target: kTargetLanguage
+    // Two fixed-direction Apple sessions kept alive for the on-device
+    // fallback; LanguageDirection picks which one a given piece of text uses.
+    @State private var configToThai = TranslationSession.Configuration(
+        source: kEnglishLanguage,
+        target: kThaiLanguage
+    )
+    @State private var configToEnglish = TranslationSession.Configuration(
+        source: kThaiLanguage,
+        target: kEnglishLanguage
     )
     @State private var justCopied = false
 
@@ -68,8 +74,13 @@ struct OverlayContentView: View {
                     .opacity(viewModel.isHovering ? 1 : 0)
                     .animation(.easeInOut(duration: 0.15), value: viewModel.isHovering)
             }
-            .translationTask(configuration) { session in
-                await viewModel.runTranslationLoop(session)
+            .translationTask(configToThai) { session in
+                viewModel.attachThaiSession(session)
+                await viewModel.keepSessionAlive()
+            }
+            .translationTask(configToEnglish) { session in
+                viewModel.attachEnglishSession(session)
+                await viewModel.keepSessionAlive()
             }
     }
 
@@ -118,7 +129,7 @@ struct OverlayContentView: View {
 
         case .failed(let message):
             VStack(spacing: 0) {
-                translationBody
+                mainBody
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption2)
                     .foregroundStyle(.orange)
@@ -129,10 +140,22 @@ struct OverlayContentView: View {
             }
 
         case .starting, .running, .paused:
+            mainBody
+        }
+    }
+
+    @ViewBuilder
+    private var mainBody: some View {
+        if viewModel.arModeEnabled {
+            arOverlayBody
+        } else {
             translationBody
         }
     }
 
+    /// Classic mode: all recognized text translated as one block. A dark
+    /// backing behind the text keeps it legible even when the live
+    /// background bleeds through a low glass opacity.
     private var translationBody: some View {
         ScrollView {
             Text(viewModel.translatedText.isEmpty ? placeholder : viewModel.translatedText)
@@ -141,10 +164,58 @@ struct OverlayContentView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
         }
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.black.opacity(0.32))
+                .padding(4)
+        )
+    }
+
+    /// AR mode: each recognized line is redrawn in place over the original
+    /// text's own position, so the translation sits exactly where the
+    /// source text was instead of in a separate block.
+    private var arOverlayBody: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                if viewModel.arSegments.isEmpty {
+                    Text(placeholder)
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
+                        .padding(12)
+                }
+                ForEach(viewModel.arSegments) { segment in
+                    arPatch(for: segment, in: proxy.size)
+                }
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+    }
+
+    private func arPatch(for segment: ARSegment, in size: CGSize) -> some View {
+        // Vision's boundingBox is normalized with origin at the bottom-left;
+        // flip to SwiftUI's top-left origin.
+        let box = segment.boundingBox
+        let rect = CGRect(
+            x: box.minX * size.width,
+            y: (1 - box.minY - box.height) * size.height,
+            width: box.width * size.width,
+            height: box.height * size.height
+        )
+        return Text(segment.displayText)
+            .font(.system(size: max(9, rect.height * 0.72)))
+            .lineLimit(1)
+            .minimumScaleFactor(0.4)
+            .foregroundStyle(.white)
+            .frame(width: max(rect.width, 1), height: max(rect.height, 1))
+            .background(
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color.black.opacity(0.85))
+            )
+            .position(x: rect.midX, y: rect.midY)
     }
 
     private var placeholder: String {
-        viewModel.status == .paused ? "Repositioning…" : "Point the lens at English text…"
+        viewModel.status == .paused ? "Repositioning…" : "Point the lens at English or Thai text…"
     }
 }
 

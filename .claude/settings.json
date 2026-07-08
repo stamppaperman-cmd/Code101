@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(codesign -dv *)",
+      "Bash(log show *)",
+      "Bash(log stream *)",
+      "Bash(security find-identity *)"
+    ]
+  }
+}

@@ -9,6 +9,7 @@ final class OverlayPanel: NSPanel {
     static let defaultLensSize = NSSize(width: 300, height: 180)
 
     private var cancellables = Set<AnyCancellable>()
+    private weak var viewModel: OverlayViewModel?
 
     init(viewModel: OverlayViewModel) {
         let contentRect = Self.restoredLensFrame() ?? Self.centeredDefaultFrame()
@@ -18,6 +19,7 @@ final class OverlayPanel: NSPanel {
             backing: .buffered,
             defer: false
         )
+        self.viewModel = viewModel
 
         isOpaque = false
         backgroundColor = .clear
@@ -68,6 +70,46 @@ final class OverlayPanel: NSPanel {
                 container?.permissionMode = needsPermission
             }
             .store(in: &cancellables)
+
+        // A display can disconnect or change resolution out from under the
+        // panel; make sure it's still fully on some screen afterward.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(revalidatePlacementOnScreenChange),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func revalidatePlacementOnScreenChange() {
+        guard let screen = NSScreen.screens.first(where: { $0.frame.intersects(frame) }) else {
+            // Off every connected screen (e.g. its display was unplugged) —
+            // recenter on the main screen at the panel's current size.
+            if let mainScreen = NSScreen.main {
+                let visible = mainScreen.visibleFrame
+                setFrameOrigin(NSPoint(x: visible.midX - frame.width / 2, y: visible.midY - frame.height / 2))
+                notifyFrameSettled()
+            }
+            return
+        }
+        let visible = screen.visibleFrame
+        var newFrame = frame
+        newFrame.origin.x = min(max(newFrame.origin.x, visible.minX), visible.maxX - newFrame.width)
+        newFrame.origin.y = min(max(newFrame.origin.y, visible.minY), visible.maxY - newFrame.height)
+        if newFrame != frame {
+            setFrame(newFrame, display: true)
+            notifyFrameSettled()
+        }
+    }
+
+    /// Keeps the capture rect and saved position in sync after the panel
+    /// moves outside of a direct user drag (e.g. a display reconfiguration).
+    private func notifyFrameSettled() {
+        viewModel?.dragEnded()
     }
 
     /// Last saved lens frame, if it is still valid and on a connected screen.
@@ -104,6 +146,8 @@ final class OverlayPanel: NSPanel {
 final class DragContainerView: NSView {
     static let minLensSize = NSSize(width: 200, height: 120)
     static let maxLensSize = NSSize(width: 900, height: 600)
+    /// How close to a screen edge (in points) a drag-release must land to snap flush.
+    static let edgeSnapThreshold: CGFloat = 20
 
     var onDragStart: (() -> Void)?
     var onDragEnd: (() -> Void)?
@@ -206,7 +250,37 @@ final class DragContainerView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if dragMode == .move {
+            snapToScreenEdgeIfNeeded()
+        }
         onDragEnd?()
+    }
+
+    /// Snaps the panel flush to a screen edge it was dropped within
+    /// `edgeSnapThreshold` points of. Only applies to moves, not resizes.
+    private func snapToScreenEdgeIfNeeded() {
+        guard let window,
+              let screen = NSScreen.screens.first(where: { $0.frame.intersects(window.frame) }) ?? NSScreen.main
+        else { return }
+
+        let visible = screen.visibleFrame
+        var snapped = window.frame
+
+        if abs(snapped.minX - visible.minX) < Self.edgeSnapThreshold {
+            snapped.origin.x = visible.minX
+        } else if abs(snapped.maxX - visible.maxX) < Self.edgeSnapThreshold {
+            snapped.origin.x = visible.maxX - snapped.width
+        }
+
+        if abs(snapped.minY - visible.minY) < Self.edgeSnapThreshold {
+            snapped.origin.y = visible.minY
+        } else if abs(snapped.maxY - visible.maxY) < Self.edgeSnapThreshold {
+            snapped.origin.y = visible.maxY - snapped.height
+        }
+
+        if snapped != window.frame {
+            window.setFrame(snapped, display: true, animate: true)
+        }
     }
 }
 

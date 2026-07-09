@@ -3,8 +3,8 @@ import Combine
 import SwiftUI
 
 /// The floating translation lens: a borderless, non-activating panel with a
-/// translucent glass background, draggable from anywhere on its surface and
-/// resizable from its bottom-right corner.
+/// translucent glass background, draggable from anywhere on its surface,
+/// resizable from any edge or corner, and scroll-to-adjust for glass opacity.
 final class OverlayPanel: NSPanel {
     static let defaultLensSize = NSSize(width: 300, height: 180)
 
@@ -37,6 +37,14 @@ final class OverlayPanel: NSPanel {
         container.onDragStart = { [weak viewModel] in viewModel?.dragBegan() }
         container.onDragEnd = { [weak viewModel] in viewModel?.dragEnded() }
         container.onHoverChange = { [weak viewModel] hovering in viewModel?.setHovering(hovering) }
+        container.onScrollOpacity = { [weak viewModel] delta in
+            // Scroll up (positive deltaY) makes the glass more solid; scroll
+            // down makes it more see-through. Range matches the menu bar slider.
+            guard let viewModel else { return }
+            let sensitivity = 0.0025
+            let updated = viewModel.glassOpacity + Double(delta) * sensitivity
+            viewModel.glassOpacity = updated.clamped(to: 0.15...1.0)
+        }
 
         let effectView = NSVisualEffectView(frame: container.bounds)
         effectView.material = .hudWindow
@@ -141,8 +149,9 @@ final class OverlayPanel: NSPanel {
 }
 
 /// Content view that moves the panel with mouseDown/mouseDragged (or resizes
-/// it when the drag starts in the bottom-right corner) and reports drag
-/// start/end so capture can pause and restart at the new frame.
+/// it when the drag starts near an edge/corner), scroll-adjusts glass
+/// opacity, and reports drag start/end so capture can pause and restart at
+/// the new frame.
 final class DragContainerView: NSView {
     static let minLensSize = NSSize(width: 200, height: 120)
     static let maxLensSize = NSSize(width: 900, height: 600)
@@ -152,12 +161,32 @@ final class DragContainerView: NSView {
     var onDragStart: (() -> Void)?
     var onDragEnd: (() -> Void)?
     var onHoverChange: ((Bool) -> Void)?
+    /// Delta from a scroll gesture over the lens, used to nudge glass opacity.
+    var onScrollOpacity: ((CGFloat) -> Void)?
     /// While the permission message (with its button) is showing, most of the
     /// surface passes events through to SwiftUI instead of dragging.
     var permissionMode = false
 
-    private enum DragMode { case move, resize }
-    private let resizeGripHitSize: CGFloat = 24
+    /// Which edge(s) of the panel a resize drag is moving. A single edge
+    /// resizes one axis; a corner (two edges) resizes both, keeping the two
+    /// opposite edges fixed — standard window resize-handle behavior.
+    private struct ResizeEdges: OptionSet {
+        let rawValue: Int
+        static let left = ResizeEdges(rawValue: 1 << 0)
+        static let right = ResizeEdges(rawValue: 1 << 1)
+        static let top = ResizeEdges(rawValue: 1 << 2)
+        static let bottom = ResizeEdges(rawValue: 1 << 3)
+    }
+
+    private enum DragMode: Equatable {
+        case move
+        case resize(ResizeEdges)
+    }
+
+    /// Plain-edge hit margin; corners use a slightly larger zone so they're
+    /// easier to grab.
+    private let edgeResizeMargin: CGFloat = 8
+    private let cornerResizeMargin: CGFloat = 14
     /// Top-right strip hosting the SwiftUI copy + close buttons.
     private let controlStripSize = NSSize(width: 68, height: 34)
     private let permissionDragBandHeight: CGFloat = 24
@@ -210,12 +239,31 @@ final class DragContainerView: NSView {
     override func mouseDown(with event: NSEvent) {
         guard let window else { return }
         let local = convert(event.locationInWindow, from: nil)
-        dragMode = (local.x > bounds.width - resizeGripHitSize && local.y < resizeGripHitSize)
-            ? .resize
-            : .move
+        let edges = resizeEdges(at: local)
+        dragMode = edges.isEmpty ? .move : .resize(edges)
         initialMouseLocation = NSEvent.mouseLocation
         initialWindowFrame = window.frame
         onDragStart?()
+    }
+
+    /// Which edge(s) `point` (in the view's own bounds) is near, if any.
+    /// Bounds are unflipped (y = 0 at the bottom), matching AppKit screen
+    /// coordinates used for the resulting window math.
+    private func resizeEdges(at point: NSPoint) -> ResizeEdges {
+        let nearLeftCorner = point.x < cornerResizeMargin
+        let nearRightCorner = point.x > bounds.width - cornerResizeMargin
+        let nearBottomCorner = point.y < cornerResizeMargin
+        let nearTopCorner = point.y > bounds.height - cornerResizeMargin
+
+        if nearLeftCorner && nearBottomCorner { return [.left, .bottom] }
+        if nearLeftCorner && nearTopCorner { return [.left, .top] }
+        if nearRightCorner && nearBottomCorner { return [.right, .bottom] }
+        if nearRightCorner && nearTopCorner { return [.right, .top] }
+        if point.x < edgeResizeMargin { return [.left] }
+        if point.x > bounds.width - edgeResizeMargin { return [.right] }
+        if point.y < edgeResizeMargin { return [.bottom] }
+        if point.y > bounds.height - edgeResizeMargin { return [.top] }
+        return []
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -230,23 +278,38 @@ final class DragContainerView: NSView {
                 x: initialWindowFrame.minX + dx,
                 y: initialWindowFrame.minY + dy
             ))
-        case .resize:
-            // Bottom-right grip: dragging right widens, dragging down grows
-            // downward while the top edge stays put.
-            let width = (initialWindowFrame.width + dx)
+        case .resize(let edges):
+            window.setFrame(resizedFrame(edges: edges, dx: dx, dy: dy), display: true)
+        }
+    }
+
+    /// Applies a resize delta to `initialWindowFrame` for the given active
+    /// edge(s), clamping each axis independently and keeping the edge(s) NOT
+    /// being dragged fixed in place.
+    private func resizedFrame(edges: ResizeEdges, dx: CGFloat, dy: CGFloat) -> NSRect {
+        var frame = initialWindowFrame
+
+        if edges.contains(.right) {
+            frame.size.width = (initialWindowFrame.width + dx)
                 .clamped(to: Self.minLensSize.width...Self.maxLensSize.width)
+        } else if edges.contains(.left) {
+            let width = (initialWindowFrame.width - dx)
+                .clamped(to: Self.minLensSize.width...Self.maxLensSize.width)
+            frame.origin.x = initialWindowFrame.maxX - width
+            frame.size.width = width
+        }
+
+        if edges.contains(.top) {
+            frame.size.height = (initialWindowFrame.height + dy)
+                .clamped(to: Self.minLensSize.height...Self.maxLensSize.height)
+        } else if edges.contains(.bottom) {
             let height = (initialWindowFrame.height - dy)
                 .clamped(to: Self.minLensSize.height...Self.maxLensSize.height)
-            window.setFrame(
-                NSRect(
-                    x: initialWindowFrame.minX,
-                    y: initialWindowFrame.maxY - height,
-                    width: width,
-                    height: height
-                ),
-                display: true
-            )
+            frame.origin.y = initialWindowFrame.maxY - height
+            frame.size.height = height
         }
+
+        return frame
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -254,6 +317,10 @@ final class DragContainerView: NSView {
             snapToScreenEdgeIfNeeded()
         }
         onDragEnd?()
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        onScrollOpacity?(event.scrollingDeltaY)
     }
 
     /// Snaps the panel flush to a screen edge it was dropped within
@@ -286,6 +353,12 @@ final class DragContainerView: NSView {
 
 private extension CGFloat {
     func clamped(to range: ClosedRange<CGFloat>) -> CGFloat {
+        Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
+    }
+}
+
+private extension Double {
+    func clamped(to range: ClosedRange<Double>) -> Double {
         Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
     }
 }

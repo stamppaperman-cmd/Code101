@@ -79,6 +79,22 @@ struct MenuBarControlsView: View {
                 }
                 .font(.callout)
                 Slider(value: $viewModel.glassOpacity, in: 0.15...1.0)
+                Text("Tip: scroll on the lens to adjust this without opening the menu.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Text size")
+                    Spacer()
+                    Text("\(Int(viewModel.textScale * 100))%")
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                .font(.callout)
+                Slider(value: $viewModel.textScale, in: 0.7...2.0)
             }
 
             Divider()

@@ -78,6 +78,11 @@ final class OverlayViewModel: ObservableObject {
     @Published var glassOpacity: Double {
         didSet { UserDefaults.standard.set(glassOpacity, forKey: Self.glassOpacityKey) }
     }
+    /// Multiplier applied to the translated text's font size, in both
+    /// classic and AR mode. Persisted across launches.
+    @Published var textScale: Double {
+        didSet { UserDefaults.standard.set(textScale, forKey: Self.textScaleKey) }
+    }
     /// Prefer the free online translator (better quality); falls back to
     /// on-device Apple Translation when it fails or the network is down.
     @Published var useOnlineTranslation: Bool {
@@ -109,6 +114,7 @@ final class OverlayViewModel: ObservableObject {
     @Published private(set) var translationNote: String?
 
     private static let glassOpacityKey = "glassOpacity"
+    private static let textScaleKey = "textScale"
     private static let onlineTranslationKey = "useOnlineTranslation"
     private static let arModeKey = "arModeEnabled"
     private static let directionOverrideKey = "directionOverride"
@@ -139,6 +145,7 @@ final class OverlayViewModel: ObservableObject {
 
     init() {
         glassOpacity = UserDefaults.standard.object(forKey: Self.glassOpacityKey) as? Double ?? 0.85
+        textScale = UserDefaults.standard.object(forKey: Self.textScaleKey) as? Double ?? 1.0
         useOnlineTranslation = UserDefaults.standard.object(forKey: Self.onlineTranslationKey) as? Bool ?? true
         arModeEnabled = UserDefaults.standard.object(forKey: Self.arModeKey) as? Bool ?? false
         directionOverride = UserDefaults.standard.string(forKey: Self.directionOverrideKey)

@@ -167,7 +167,7 @@ struct OverlayContentView: View {
     private var translationBody: some View {
         ScrollView {
             Text(viewModel.translatedText.isEmpty ? placeholder : viewModel.translatedText)
-                .font(.system(size: 14))
+                .font(.system(size: 14 * viewModel.textScale))
                 .foregroundStyle(viewModel.translatedText.isEmpty ? .secondary : .primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
@@ -187,7 +187,7 @@ struct OverlayContentView: View {
             ZStack(alignment: .topLeading) {
                 if viewModel.arSegments.isEmpty {
                     Text(placeholder)
-                        .font(.system(size: 14))
+                        .font(.system(size: 14 * viewModel.textScale))
                         .foregroundStyle(.secondary)
                         .padding(12)
                 }
@@ -210,7 +210,7 @@ struct OverlayContentView: View {
             height: box.height * size.height
         )
         return Text(segment.displayText)
-            .font(.system(size: max(9, rect.height * 0.72)))
+            .font(.system(size: max(9, rect.height * 0.72 * viewModel.textScale)))
             .lineLimit(1)
             .minimumScaleFactor(0.4)
             .foregroundStyle(.white)

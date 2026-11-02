@@ -2,9 +2,12 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// The floating translation lens: a borderless, non-activating panel with a
-/// translucent glass background, draggable from anywhere on its surface,
-/// resizable from any edge or corner, and scroll-to-adjust for glass opacity.
+/// Lens 1 — the clear viewfinder. A borderless, non-activating panel with a
+/// see-through interior (so you can read what's underneath) and a thin accent
+/// border marking the region being captured. Draggable from anywhere on its
+/// surface and resizable from any edge or corner. In AR mode the translated
+/// lines are drawn in place inside it; the block translation lives in the
+/// separate `ReaderPanel`.
 final class OverlayPanel: NSPanel {
     static let defaultLensSize = NSSize(width: 300, height: 180)
 
@@ -23,7 +26,7 @@ final class OverlayPanel: NSPanel {
 
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = true
+        hasShadow = false // nothing opaque to cast one; it'd just be a grey box
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         hidesOnDeactivate = false
@@ -32,26 +35,18 @@ final class OverlayPanel: NSPanel {
 
         let container = DragContainerView(frame: NSRect(origin: .zero, size: contentRect.size))
         container.wantsLayer = true
-        container.layer?.cornerRadius = 18
+        container.layer?.cornerRadius = 14
         container.layer?.masksToBounds = true
+        // Border, grab band and header are all drawn in SwiftUI now (the
+        // border color reports capture state, so it can't be a static layer).
+        // The middle is left at alpha 0 on purpose: macOS routes mouse events
+        // by the window's alpha channel, so transparent pixels pass clicks
+        // through to whatever is underneath — you can keep using the app you
+        // are translating. Everything grabbable is painted by
+        // `OverlayContentView` instead.
         container.onDragStart = { [weak viewModel] in viewModel?.dragBegan() }
         container.onDragEnd = { [weak viewModel] in viewModel?.dragEnded() }
         container.onHoverChange = { [weak viewModel] hovering in viewModel?.setHovering(hovering) }
-        container.onScrollOpacity = { [weak viewModel] delta in
-            // Scroll up (positive deltaY) makes the glass more solid; scroll
-            // down makes it more see-through. Range matches the menu bar slider.
-            guard let viewModel else { return }
-            let sensitivity = 0.0025
-            let updated = viewModel.glassOpacity + Double(delta) * sensitivity
-            viewModel.glassOpacity = updated.clamped(to: 0.15...1.0)
-        }
-
-        let effectView = NSVisualEffectView(frame: container.bounds)
-        effectView.material = .hudWindow
-        effectView.blendingMode = .behindWindow
-        effectView.state = .active
-        effectView.autoresizingMask = [.width, .height]
-        container.addSubview(effectView)
 
         let hostingView = NSHostingView(rootView: OverlayContentView(viewModel: viewModel))
         hostingView.frame = container.bounds
@@ -59,14 +54,6 @@ final class OverlayPanel: NSPanel {
         container.addSubview(hostingView)
 
         contentView = container
-
-        effectView.alphaValue = viewModel.glassOpacity
-        viewModel.$glassOpacity
-            .receive(on: RunLoop.main)
-            .sink { [weak effectView] opacity in
-                effectView?.alphaValue = opacity
-            }
-            .store(in: &cancellables)
 
         // While asking for permission the lens shows a real button, so mouse
         // events must reach SwiftUI instead of being eaten by the drag handle.
@@ -187,9 +174,10 @@ final class DragContainerView: NSView {
     /// easier to grab.
     private let edgeResizeMargin: CGFloat = 8
     private let cornerResizeMargin: CGFloat = 14
-    /// Top-right strip hosting the SwiftUI copy + close buttons.
-    private let controlStripSize = NSSize(width: 68, height: 34)
-    private let permissionDragBandHeight: CGFloat = 24
+    /// Top-right strip hosting the SwiftUI buttons. Matches the lens header's
+    /// height so no dead band is left underneath it.
+    private let controlStripSize = NSSize(width: 60, height: 26)
+    private let permissionDragBandHeight: CGFloat = 26
 
     private var dragMode: DragMode = .move
     private var initialMouseLocation: NSPoint = .zero
@@ -197,16 +185,16 @@ final class DragContainerView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
+        // Top-right corner: the SwiftUI control buttons. Checked first so they
+        // stay clickable in permission mode too.
+        if local.x > bounds.width - controlStripSize.width,
+           local.y > bounds.height - controlStripSize.height {
+            return super.hitTest(point)
+        }
         if permissionMode {
             // Keep a drag band along the top edge; the rest goes to SwiftUI
             // so the "Open System Settings" button is clickable.
             return local.y > bounds.height - permissionDragBandHeight ? self : super.hitTest(point)
-        }
-        // The whole lens surface is a drag handle, except the top-right
-        // corner where the SwiftUI control buttons live.
-        if local.x > bounds.width - controlStripSize.width,
-           local.y > bounds.height - controlStripSize.height {
-            return super.hitTest(point)
         }
         return self
     }

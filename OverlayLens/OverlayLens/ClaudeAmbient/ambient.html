@@ -1,0 +1,787 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>StampLab Ambient</title>
+<style>
+:root{--u:min(1vw,1.6vh)}
+html,body{margin:0;height:100%;background:#000;overflow:hidden;cursor:none;
+  font-family:-apple-system,"SF Pro Text","Sukhumvit Set","Thonburi",sans-serif;-webkit-user-select:none;user-select:none}
+#stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+#clk{position:absolute;top:calc(3.1*var(--u));left:0;right:0;text-align:center;color:#5f5e5a;font-size:calc(2.24*var(--u))}
+#hint{position:absolute;bottom:calc(2.8*var(--u));left:0;right:0;text-align:center;color:#444441;font-size:calc(2.07*var(--u))}
+#drift{display:flex;flex-direction:column;align-items:center;gap:calc(2.4*var(--u));animation:dr 40s ease-in-out infinite}
+#chars{display:flex;align-items:flex-end;gap:calc(5*var(--u))}
+#sc,#sg{width:calc(31*var(--u));height:auto}
+#t1{color:#e8e6dc;font-size:calc(3.8*var(--u));font-weight:500;text-align:center}
+#t2{color:#888780;font-size:calc(2.24*var(--u));margin-top:calc(1*var(--u));text-align:center}
+@keyframes dr{0%,100%{transform:translate(calc(-2.4*var(--u)),calc(-1*var(--u)))}50%{transform:translate(calc(2.4*var(--u)),calc(1*var(--u)))}}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes stroke{0%,100%{transform:translate(0,0) rotate(0)}30%{transform:translate(3px,-7px) rotate(-6deg)}60%{transform:translate(5px,3px) rotate(4deg)}}
+@keyframes reveal{0%{transform:scaleY(1)}78%,94%{transform:scaleY(0)}100%{transform:scaleY(1)}}
+@keyframes blk{0%,90%,100%{transform:scaleY(1)}94%{transform:scaleY(.15)}}
+@keyframes flo{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@keyframes shd{0%,100%{transform:scaleX(1);opacity:.9}50%{transform:scaleX(.75);opacity:.5}}
+@keyframes spk{0%,100%{opacity:0}40%{opacity:1}}
+@keyframes tw{0%,100%{opacity:.35}50%{opacity:1}}
+@keyframes hop{0%,70%,100%{transform:translateY(0)}80%{transform:translateY(-10px)}}
+@keyframes pu{0%,100%{opacity:.3}50%{opacity:1}}
+#sky{position:absolute;inset:0;pointer-events:none;transition:background 2s}
+#sky.day{background:radial-gradient(ellipse at 50% 120%,rgba(55,138,221,.10),transparent 60%)}
+#sky.morning{background:radial-gradient(ellipse at 80% 110%,rgba(250,199,117,.13),transparent 55%)}
+#sky.dusk{background:linear-gradient(to top,rgba(216,90,48,.30),rgba(153,53,86,.14) 35%,transparent 60%)}
+.px{position:absolute;width:calc(.4*var(--u));height:calc(.4*var(--u));background:#e8e6dc;animation:tw 3.2s ease-in-out infinite}
+#moon,#sunp{position:absolute;top:calc(6*var(--u));right:calc(9*var(--u));width:calc(5*var(--u));display:none}
+.night #moon,.late #moon,.day #sunp,.morning #sunp,.dusk #sunp{display:block}
+#shoot{position:absolute;top:calc(8*var(--u));left:20%;width:calc(6*var(--u));height:calc(.3*var(--u));background:linear-gradient(to right,transparent,#e8e6dc);opacity:0}
+.night #shoot,.late #shoot{animation:shoot 23s linear infinite}
+@keyframes shoot{0%,92%{opacity:0;transform:translate(0,0) rotate(18deg)}94%{opacity:.9}100%{opacity:0;transform:translate(calc(30*var(--u)),calc(10*var(--u))) rotate(18deg)}}
+#spot{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 38% 34% at 50% 50%,rgba(255,236,200,.05),transparent 70%)}
+#floor{width:calc(70*var(--u));height:1px;background:linear-gradient(to right,transparent,#2C2C2A,transparent);margin-top:calc(-1.2*var(--u))}
+.cap,.yawn,.zz{display:none}
+.late .cap,.late .yawn,.late .zz{display:inline}
+.late .yawn{animation:yawn 9s ease-in-out infinite;transform-origin:center}
+@keyframes yawn{0%,70%,92%,100%{opacity:0;transform:scaleY(.2)}76%,86%{opacity:1;transform:scaleY(1)}}
+.late .zz{animation:zz 3s ease-out infinite}.late .zz.b{animation-delay:1.5s}
+@keyframes zz{0%{opacity:0;transform:translate(0,0)}30%{opacity:1}100%{opacity:0;transform:translate(8px,-18px)}}
+#quota{position:absolute;top:calc(2.6*var(--u));left:calc(3.4*var(--u));display:flex;align-items:center;gap:calc(1*var(--u));color:#888780;font-size:calc(1.55*var(--u));line-height:1.35}
+#quota svg{height:calc(2.4*var(--u));width:auto}
+#quota b{font-weight:500;color:#c9c7bd}
+#acts{margin-top:calc(1.6*var(--u));display:flex;flex-direction:column;align-items:center;gap:calc(.5*var(--u))}
+.act{display:flex;align-items:center;gap:calc(.7*var(--u));color:#5f5e5a;font-size:calc(1.6*var(--u))}
+.act i{width:calc(.75*var(--u));height:calc(.75*var(--u));display:inline-block}
+.act.now{color:#c9c7bd;font-size:calc(1.95*var(--u))}
+.act.now.fresh{animation:fresh .6s ease-out}
+@keyframes fresh{0%{opacity:0;transform:translateY(calc(1*var(--u)))}100%{opacity:1;transform:none}}
+#cnt{color:#5f5e5a;font-size:calc(1.45*var(--u));margin-top:calc(.4*var(--u))}
+.sweat{display:none}.hot .sweat{display:inline}
+.hot .sweat{animation:drip 1.6s ease-in infinite}.hot .sweat.b{animation-delay:.8s}
+@keyframes drip{0%{opacity:0;transform:translateY(0)}20%{opacity:1}100%{opacity:0;transform:translateY(10px)}}
+#recap{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.96);opacity:0;pointer-events:none;transition:opacity .35s,transform .35s;
+  min-width:calc(42*var(--u));padding:calc(3*var(--u)) calc(4*var(--u)) calc(2.4*var(--u));border-radius:calc(2.2*var(--u));
+  background:rgba(30,30,28,.94);border:1px solid #3a3a37;color:#e8e6dc;box-shadow:0 calc(2*var(--u)) calc(6*var(--u)) rgba(0,0,0,.6)}
+.recap #recap{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.recap #drift,.recap #quota{opacity:.15;transition:opacity .35s}
+.recap #hint{opacity:0}
+#recap h1{margin:0 0 calc(1.8*var(--u));font-size:calc(2.7*var(--u));font-weight:500}
+.rr{display:flex;align-items:baseline;gap:calc(1.1*var(--u));font-size:calc(2.1*var(--u));margin:calc(.9*var(--u)) 0}
+.rr i{width:calc(1*var(--u));height:calc(1*var(--u));display:inline-block;flex:none;transform:translateY(calc(-.15*var(--u)))}
+.rr span{color:#888780;font-size:calc(1.7*var(--u))}
+#rfoot{display:flex;gap:calc(2.4*var(--u));margin-top:calc(2.2*var(--u));color:#888780;font-size:calc(1.6*var(--u));align-items:center}
+#rfoot kbd{font:inherit;color:#e8e6dc;border:1px solid #5f5e5a;border-radius:calc(.5*var(--u));padding:0 calc(.6*var(--u));margin-right:calc(.5*var(--u))}
+#rbar{height:2px;background:#5f5e5a;margin-top:calc(1.6*var(--u));transform-origin:left}
+.recap #rbar{animation:rbar 4.5s linear forwards}
+@keyframes rbar{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+svg.ch *{transform-box:fill-box;transform-origin:center}
+.cover{transform-origin:bottom !important}
+.work .cover{animation:reveal 8s steps(14) infinite}
+.wait .cover,.done .cover{display:none}
+.work #cB{animation:bob 1.2s ease-in-out infinite}
+.work #cR,.work #gR{animation:stroke .9s ease-in-out infinite;transform-origin:left !important}
+.work #cE,.work #gE{animation:blk 4s infinite}
+.work #gB{animation:flo 2.4s ease-in-out infinite}.work #gS{animation:shd 2.4s ease-in-out infinite}
+.work .s1{animation:spk 1.6s infinite}.work .s2{animation:spk 1.6s .5s infinite}.work .s3{animation:spk 1.6s 1s infinite}
+.star{animation:tw 2.2s ease-in-out infinite}.star.b{animation-delay:.7s}.star.c{animation-delay:1.4s}
+.wait #cE,.wait #gE{transform:translateY(-3px)}.wait .bang{animation:pu 1.4s ease-in-out infinite}
+.done #cB,.done #gB{animation:hop 2.4s ease-in-out infinite}
+.bang,.chk,.hap{display:none}
+.wait .bang,.done .chk,.done .hap{display:inline}
+.done #cE,.done #gE,.wait .spk,.done .spk{display:none}
+</style>
+</head>
+<body>
+<div id="sky"></div>
+<div id="spot"></div>
+<svg id="moon" viewBox="0 0 10 10" shape-rendering="crispEdges"><path d="M3 0h4v1h1v1h1v2h1v3h-1v1h-1v1h-1v1h-4v-1h-1v-1h1v-1h1v-1h1v-1h1v-2h-1v-1h-1v-1h-1z" fill="#FAC775" opacity=".8"/></svg>
+<svg id="sunp" viewBox="0 0 10 10" shape-rendering="crispEdges"><path d="M3 1h4v1h1v1h1v4h-1v1h-1v1h-4v-1h-1v-1h-1v-4h1v-1h1z" fill="#EF9F27" opacity=".55"/></svg>
+<div id="shoot"></div>
+<div id="stage">
+<div id="clk"></div>
+<div id="quota"></div>
+<div id="drift">
+<div id="chars">
+<!-- Claude: ใส่หมวกเบเร่ต์ วาดภาพบนขาตั้ง (ภาพวนตามแกลเลอรีด้านล่าง) -->
+<svg id="sc" class="ch work" viewBox="0 0 260 150">
+<g class="bang"><rect x="46" y="4" width="26" height="28" rx="3" fill="#EF9F27"/><rect x="56" y="9" width="6" height="11" fill="#000"/><rect x="56" y="23" width="6" height="5" fill="#000"/></g>
+<g class="chk"><rect x="46" y="4" width="26" height="26" rx="13" fill="#5DCAA5"/><path d="M52 17 l5 5 l8 -9" stroke="#000" stroke-width="3.5" fill="none" stroke-linecap="square"/></g>
+<g class="art"></g>
+<g id="cB"><g fill="#D97757">
+<rect x="22" y="114" width="9" height="18"/><rect x="38" y="114" width="9" height="18"/><rect x="66" y="114" width="9" height="18"/><rect x="82" y="114" width="9" height="18"/>
+<rect x="12" y="64" width="94" height="52"/>
+<rect x="0" y="82" width="14" height="12"/>
+</g>
+<rect x="24" y="56" width="66" height="10" fill="#A32D2D"/><rect x="34" y="50" width="48" height="6" fill="#A32D2D"/><rect x="54" y="44" width="6" height="6" fill="#791F1F"/>
+<rect x="78" y="58" width="16" height="6" fill="#791F1F"/>
+<g id="cE" fill="#000"><rect x="34" y="78" width="9" height="15"/><rect x="74" y="78" width="9" height="15"/></g>
+<g class="hap" stroke="#000" stroke-width="5" fill="none"><path d="M31 90 l7 -7 l7 7"/><path d="M71 90 l7 -7 l7 7"/></g>
+<g class="cap"><path d="M20 68 L94 68 L104 40 L88 44 L60 40 L34 50 Z" fill="#26215C"/><rect x="20" y="62" width="74" height="7" fill="#e8e6dc"/><rect x="100" y="34" width="10" height="10" fill="#e8e6dc"/></g>
+<rect class="yawn" x="52" y="98" width="13" height="10" fill="#000"/>
+<g fill="#85B7EB"><path class="sweat" d="M100 70 q3 5 0 7 q-3 -2 0 -7 z"/><path class="sweat b" d="M8 74 q3 5 0 7 q-3 -2 0 -7 z"/></g>
+<g fill="#888780"><rect class="zz" x="110" y="52" width="8" height="2"/><rect class="zz b" x="116" y="40" width="6" height="2"/></g>
+<g id="cR"><rect x="104" y="90" width="22" height="10" fill="#D97757"/>
+<path d="M122 92 L146 70" stroke="#854F0B" stroke-width="4"/><rect x="144" y="64" width="7" height="7" fill="#2A211B"/></g>
+</g>
+</svg>
+<!-- Local AI: อัญมณี วาดภาพบนขาตั้ง -->
+<svg id="sg" class="ch work" viewBox="0 0 260 150">
+<g class="bang" transform="translate(44 0)"><rect x="66" y="4" width="26" height="28" rx="3" fill="#EF9F27"/><rect x="76" y="9" width="6" height="11" fill="#000"/><rect x="76" y="23" width="6" height="5" fill="#000"/></g>
+<g class="chk" transform="translate(44 0)"><rect x="66" y="4" width="26" height="26" rx="13" fill="#D97757"/><path d="M72 17 l5 5 l8 -9" stroke="#000" stroke-width="3.5" fill="none" stroke-linecap="square"/></g>
+<rect class="spk s1" x="12" y="46" width="6" height="6" fill="#9FE1CB"/><rect class="spk s2" x="118" y="30" width="6" height="6" fill="#9FE1CB"/><rect class="spk s3" x="18" y="104" width="5" height="5" fill="#5DCAA5"/>
+<g class="art"></g>
+<rect id="gS" x="34" y="134" width="72" height="6" fill="#2C2C2A"/>
+<g id="gB">
+<rect x="48" y="40" width="44" height="8" fill="#9FE1CB"/>
+<rect x="40" y="48" width="60" height="8" fill="#5DCAA5"/>
+<rect x="32" y="56" width="76" height="16" fill="#5DCAA5"/>
+<rect x="40" y="72" width="60" height="8" fill="#5DCAA5"/>
+<rect x="48" y="80" width="44" height="8" fill="#1D9E75"/>
+<rect x="56" y="88" width="28" height="8" fill="#1D9E75"/>
+<rect x="64" y="96" width="12" height="8" fill="#0F6E56"/>
+<rect x="40" y="48" width="10" height="8" fill="#9FE1CB"/>
+<rect x="24" y="62" width="8" height="8" fill="#5DCAA5"/>
+<g id="gE" fill="#000"><rect x="52" y="56" width="8" height="12"/><rect x="80" y="56" width="8" height="12"/></g>
+<g class="hap" stroke="#000" stroke-width="4.5" fill="none"><path d="M50 66 l6 -6 l6 6"/><path d="M78 66 l6 -6 l6 6"/></g>
+<g class="cap"><path d="M46 42 L94 42 L100 18 L86 24 L66 20 Z" fill="#26215C"/><rect x="46" y="38" width="48" height="5" fill="#e8e6dc"/><rect x="97" y="13" width="8" height="8" fill="#e8e6dc"/></g>
+<rect class="yawn" x="64" y="72" width="11" height="7" fill="#000"/>
+<g fill="#888780"><rect class="zz" x="104" y="34" width="7" height="2"/><rect class="zz b" x="110" y="24" width="5" height="2"/></g>
+<g id="gR"><rect x="108" y="62" width="10" height="8" fill="#5DCAA5"/>
+<path d="M116 64 L144 48" stroke="#854F0B" stroke-width="4"/><rect x="142" y="42" width="7" height="7" fill="#FAC775"/></g>
+</g>
+</svg>
+</div>
+<div id="floor"></div>
+<div>
+<div id="t1"></div>
+<div id="t2"></div>
+<div id="acts"></div>
+</div>
+</div>
+<div id="hint"></div>
+<div id="recap"></div>
+</div>
+<script>
+// ---------- แกลเลอรีภาพวาด: พิกเซลอาร์ต (1 พิกเซล = 2 หน่วยบนผ้าใบ) ----------
+// ทั้ง 7 ภาพวาดด้วยโค้ดใน ~/Claude/Projects/claude-ambient/tools/cute-paint.js (ลายเส้นสะอาด สัดส่วนตามภาพจริง)
+// แก้ภาพ: แก้ใน cute-paint.js แล้วรัน node cute-paint.js <ชื่อภาพ|all> --html <ไฟล์นี้>
+// d = {w, h, pal: [สี], px: ตัวอักษรละ 1 พิกเซล อ้างลำดับใน pal}
+var AREA = {p: [154, 28, 78, 88], l: [146, 56, 94, 60]};
+var CH = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+function r(x, y, w, h, c) { return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" fill="' + c + '"/>'; }
+function easel(o) {
+  var top = o === 'p' ? 30 : 48, wide = o === 'p' ? 0 : 6;
+  return '<path d="M' + (166 - wide) + ' ' + top + ' L' + (150 - wide / 3) + ' 148 M' + (220 + wide) + ' ' + top + ' L' + (236 + wide / 3) + ' 148 M193 118 L193 148" stroke="#854F0B" stroke-width="5" fill="none"/>'
+    + r(o === 'p' ? 146 : 138, 117, o === 'p' ? 94 : 110, 6, '#854F0B');
+}
+function frame(o) { var a = AREA[o]; return r(a[0] - 4, a[1] - 4, a[2] + 8, a[3] + 8, '#B4B2A9'); }
+function cover(o, rows) {
+  var a = AREA[o];
+  return '<rect class="cover" style="animation-timing-function:steps(' + rows + ')" x="' + a[0] + '" y="' + a[1] + '" width="' + a[2] + '" height="' + a[3] + '" fill="#E8E6DC"/>';
+}
+/** วาดตารางพิกเซล รวมช่องสีเดียวกันที่ติดกันในแถวเป็นสี่เหลี่ยมเดียว */
+function pix(o, d) {
+  var a = AREA[o], u = a[2] / d.w, s = '';
+  for (var y = 0; y < d.h; y++) {
+    for (var x = 0; x < d.w;) {
+      var c = d.px.charAt(y * d.w + x), x0 = x;
+      while (x < d.w && d.px.charAt(y * d.w + x) === c) x++;
+      // ซ้อนทับ 0.4 กันเส้นขอบบางระหว่างแถวตอนย่อขยายจอ
+      s += r(a[0] + x0 * u, a[1] + y * u, (x - x0) * u + 0.4, u + 0.4, d.pal[CH.indexOf(c)]);
+    }
+  }
+  return '<g shape-rendering="crispEdges">' + s + '</g>';
+}
+var P = {};
+// ภาพเดิม 7 ภาพ (ภาพวาดแบนสไตล์การ์ตูน)
+P.mona = {o: 'p', name: 'Mona Lisa', svg:
+  r(154, 28, 78, 88, '#4A5A3C') + r(154, 28, 78, 26, '#6E7D57') + r(154, 46, 20, 8, '#8A8B5C') + r(212, 42, 20, 10, '#8A8B5C')
+  + r(156, 62, 16, 4, '#7A6A45') + r(214, 58, 16, 4, '#7A6A45') + r(176, 36, 34, 46, '#2A211B') + r(170, 62, 46, 22, '#2A211B')
+  + r(184, 40, 18, 24, '#D9B38C') + r(184, 40, 18, 4, '#C9A07A') + r(188, 49, 3, 2, '#3A2A1E') + r(196, 49, 3, 2, '#3A2A1E')
+  + r(191, 54, 4, 3, '#C9A07A') + r(189, 59, 9, 1.5, '#8A5A40') + r(197, 58, 2, 1.5, '#8A5A40') + r(186, 64, 14, 9, '#C9A07A')
+  + r(164, 73, 58, 43, '#3A2A1E') + r(186, 73, 14, 3, '#5A4430') + r(172, 100, 36, 9, '#D9B38C') + r(180, 104, 22, 3, '#C9A07A')};
+
+P.starry = {o: 'p', name: 'The Starry Night', svg:
+  r(154, 28, 78, 88, '#0C447C')
+  + '<path d="M156 50 q10 -10 20 0 t20 0 t20 0 t16 -2" stroke="#85B7EB" stroke-width="3" fill="none"/>'
+  + '<path d="M156 64 q12 -8 24 0 t24 0 t24 -1" stroke="#378ADD" stroke-width="3" fill="none"/>'
+  + '<path d="M170 76 q10 -6 20 0 t20 0 t20 -2" stroke="#85B7EB" stroke-width="2" fill="none"/>'
+  + '<circle cx="190" cy="56" r="6" fill="none" stroke="#B5D4F4" stroke-width="2"/>'
+  + '<circle cx="218" cy="40" r="9" fill="none" stroke="#EF9F27" stroke-width="2"/><circle cx="218" cy="40" r="5.5" fill="#FAC775"/>'
+  + '<circle class="star" cx="166" cy="38" r="2.5" fill="#FAC775"/><circle class="star b" cx="186" cy="36" r="2.5" fill="#FAC775"/>'
+  + '<circle class="star c" cx="204" cy="66" r="2.5" fill="#FAC775"/><circle class="star b" cx="226" cy="70" r="2" fill="#FAC775"/>'
+  + '<circle class="star" cx="172" cy="56" r="2" fill="#FAC775"/>'
+  + '<path d="M154 100 Q176 88 196 96 T232 92 V116 H154 Z" fill="#042C53"/>' + r(198, 84, 3, 14, '#042C53')
+  + r(188, 102, 5, 4, '#0C447C') + r(204, 100, 6, 5, '#0C447C') + r(214, 104, 5, 4, '#0C447C')
+  + r(190, 103, 2, 2, '#FAC775') + r(206, 101, 2, 2, '#FAC775') + r(216, 105, 2, 2, '#FAC775')
+  + '<path d="M160 116 L158 98 L162 82 L161 66 L166 74 L169 88 L170 102 L172 116 Z" fill="#173404"/>'
+  + '<path d="M163 100 L163 84 L166 92 Z" fill="#27500A"/>'};
+
+P.supper = {o: 'l', name: 'The Last Supper', svg: (function () {
+  var s = r(146, 56, 94, 60, '#5E5446') + r(146, 56, 94, 9, '#8A7E6A')
+    + '<path d="M156 56 V65 M170 56 V65 M184 56 V65 M198 56 V65 M212 56 V65 M226 56 V65" stroke="#6B5E4E" stroke-width="1.5"/>'
+    + '<path d="M146 65 L166 72 V96 L146 104 Z" fill="#4A3A2E"/><path d="M240 65 L220 72 V96 L240 104 Z" fill="#4A3A2E"/>'
+    + r(149, 70, 4, 22, '#712B13') + r(157, 73, 4, 19, '#712B13') + r(233, 70, 4, 22, '#712B13') + r(225, 73, 4, 19, '#712B13')
+    + r(166, 65, 54, 31, '#6B5E4E')
+    + r(176, 71, 8, 11, '#B5D4F4') + r(188, 69, 10, 13, '#B5D4F4') + r(202, 71, 8, 11, '#B5D4F4')
+    + r(176, 79, 8, 3, '#85B7EB') + r(188, 79, 10, 3, '#85B7EB') + r(202, 79, 8, 3, '#85B7EB');
+  var xs = [149, 155, 161, 168, 174, 180, 200, 206, 212, 219, 225, 231];
+  var robes = ['#378ADD', '#D4537E', '#BA7517', '#888780', '#378ADD', '#D4537E', '#639922', '#F0997B', '#378ADD', '#BA7517', '#888780', '#D4537E'];
+  xs.forEach(function (x, i) {
+    s += r(x, 85, 6, 10, robes[i]) + r(x + 1, 80, 4, 5, '#D9B38C') + r(x + 1, 79, 4, 1.5, '#6B4A2A');
+  });
+  s += r(189, 84, 9, 11, '#A32D2D') + r(193, 86, 5, 9, '#378ADD') + r(191, 78, 5, 6, '#D9B38C') + r(190, 77, 7, 2, '#6B4A2A');
+  s += r(148, 93, 90, 7, '#D3D1C7') + r(148, 98, 90, 2, '#B4B2A9') + r(146, 100, 94, 16, '#4A4036');
+  [154, 166, 178, 196, 210, 224].forEach(function (x) { s += r(x, 92, 3, 1.5, '#BA7517'); });
+  return s;
+})()};
+
+P.pollock = {o: 'l', name: 'No. 5, 1948', svg: (function () {
+  var seed = 1948;
+  function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+  var cols = ['#888780', '#888780', '#B4B2A9', '#1a1a18', '#1a1a18', '#EF9F27', '#FAC775', '#993C1D', '#712B13', '#E8E6DC'];
+  var s = r(146, 56, 94, 60, '#3a2a1e');
+  for (var i = 0; i < 90; i++) {
+    var x = 146 + rnd() * 94, y = 56 + rnd() * 60, d = 'M' + x.toFixed(1) + ' ' + y.toFixed(1);
+    var n = 2 + Math.floor(rnd() * 4);
+    for (var k = 0; k < n; k++) {
+      x = Math.min(239, Math.max(147, x + (rnd() - .5) * 34));
+      y = Math.min(115, Math.max(57, y + (rnd() - .5) * 22));
+      d += ' L' + x.toFixed(1) + ' ' + y.toFixed(1);
+    }
+    s += '<path d="' + d + '" stroke="' + cols[Math.floor(rnd() * cols.length)] + '" stroke-width="' + (0.6 + rnd() * 1.6).toFixed(1) + '" fill="none" stroke-linejoin="round"/>';
+  }
+  return s;
+})()};
+
+P.wat = {o: 'l', name: 'วัดพระแก้ว', svg: (function () {
+  var s = r(146, 56, 94, 60, '#F0997B') + r(146, 56, 94, 9, '#993C1D')
+    + '<path d="M146 65 Q170 58 196 67 T240 63 V71 H146 Z" fill="#D85A30"/>' + r(146, 74, 94, 8, '#FAC775')
+    // เจดีย์ทอง (ขวา)
+    + '<path d="M227 60 L233 90 H221 Z" fill="#EF9F27"/><path d="M218 92 Q227 80 236 92 V100 H218 Z" fill="#FAC775"/>' + r(216, 100, 22, 4, '#BA7517')
+    // ปรางค์ (กลาง)
+    + r(188, 74, 10, 28, '#BA7517') + '<path d="M188 74 L193 58 L198 74 Z" fill="#639922"/>'
+    + r(187, 79, 12, 2, '#3B6D11') + r(187, 86, 12, 2, '#3B6D11') + r(187, 93, 12, 2, '#3B6D11')
+    // หลังคาโบสถ์ (ซ้าย) ซ้อนชั้น แดง-เขียว ช่อฟ้าทอง
+    + '<path d="M148 102 L168 78 L188 102 Z" fill="#D85A30"/><path d="M153 102 L168 84 L183 102 Z" fill="#3B6D11"/><path d="M157 102 L168 89 L179 102 Z" fill="#A32D2D"/>'
+    + r(167, 73, 2, 6, '#FAC775') + r(152, 102, 32, 5, '#EF9F27')
+    // วิหาร (ขวา)
+    + '<path d="M199 103 L212 86 L225 103 Z" fill="#D85A30"/><path d="M203 103 L212 91 L221 103 Z" fill="#3B6D11"/>'
+    + r(211, 82, 2, 5, '#FAC775') + r(201, 103, 22, 4, '#EF9F27')
+    // เจดีย์ประดับกระเบื้องสีฟ้าขาว
+    + '<path d="M181 108 L184 88 L187 108 Z" fill="#B5D4F4"/><path d="M226 108 L229 92 L232 108 Z" fill="#B5D4F4"/>'
+    // ต้นไม้ + กำแพงขาวมีใบเสมา
+    + r(146, 104, 94, 6, '#3B6D11') + r(150, 102, 8, 3, '#639922') + r(192, 102, 7, 3, '#639922') + r(232, 102, 7, 3, '#639922')
+    + r(146, 110, 94, 6, '#E8E6DC');
+  for (var x = 147; x < 238; x += 6) s += r(x + 3, 110, 3, 2, '#3B6D11');
+  return s;
+})()};
+
+P.wave = {o: 'l', name: 'The Great Wave off Kanagawa', svg: (function () {
+  var s = r(146, 56, 94, 60, '#EBD5B8') + r(146, 80, 94, 10, '#C9BDA8') + r(146, 90, 94, 8, '#8A8578')
+    + r(150, 60, 6, 14, '#F1EFE8') + r(151, 62, 4, 1, '#5F5E5A') + r(151, 65, 4, 1, '#5F5E5A') + r(151, 68, 3, 1, '#5F5E5A')
+    // ภูเขาฟูจิ
+    + '<path d="M194 98 L204 86 L214 98 Z" fill="#26215C"/><path d="M200 91 L204 86 L208 91 Z" fill="#F1EFE8"/>'
+    // คลื่นยักษ์
+    + '<path d="M146 116 V98 Q150 82 166 72 Q182 61 196 64 Q207 68 203 77 Q197 71 189 75 Q181 81 185 93 Q189 105 201 116 Z" fill="#0C447C"/>'
+    + '<path d="M151 112 Q155 93 169 81 Q179 73 190 70" stroke="#85B7EB" stroke-width="2.5" fill="none"/>'
+    + '<path d="M158 115 Q162 99 174 89" stroke="#B5D4F4" stroke-width="2" fill="none"/>'
+    + '<path d="M149 84 Q160 70 176 64 Q190 59 200 66" stroke="#F1EFE8" stroke-width="3" fill="none"/>';
+  [[166,70],[172,66],[178,63],[184,61],[190,61],[196,63],[201,67],[204,73],[200,78]].forEach(function (p) {
+    s += '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="2.4" fill="#F1EFE8"/>';
+  });
+  [[208,70],[214,74],[210,80],[218,82],[222,72],[216,66],[224,86],[212,88]].forEach(function (p) {
+    s += r(p[0], p[1], 1.6, 1.6, '#F1EFE8');
+  });
+  // คลื่นลูกหน้า + เรือ
+  s += '<path d="M196 116 Q208 98 222 100 Q232 102 240 95 V116 Z" fill="#378ADD"/>'
+    + '<path d="M199 109 Q209 98 222 100 Q232 102 240 95" stroke="#F1EFE8" stroke-width="2" fill="none"/>'
+    + '<path d="M150 101 L177 92 L179 95 L152 105 Z" fill="#E3C58F"/><path d="M205 106 L234 99 L236 102 L207 109 Z" fill="#E3C58F"/>';
+  [156, 162, 168, 174].forEach(function (x) { s += r(x, 97 - (x - 156) / 3, 2, 2, '#042C53'); });
+  [212, 218, 224, 230].forEach(function (x) { s += r(x, 102 - (x - 212) / 4, 2, 2, '#042C53'); });
+  return s;
+})()};
+
+P.adam = {o: 'l', name: 'The Creation of Adam', svg: (function () {
+  var skin = '#D9B38C';
+  var s = r(146, 56, 94, 60, '#D6D3C4') + r(146, 56, 94, 14, '#C9CDC4')
+    + '<path d="M160 58 L163 70 L161 80 M226 56 L223 64" stroke="#B4B2A9" stroke-width="0.8" fill="none"/>'
+    // เนินดินฝั่งอาดัม
+    + '<path d="M146 92 Q160 86 178 93" stroke="#85B7EB" stroke-width="3" fill="none"/>'
+    + '<path d="M146 116 V95 Q162 89 180 98 Q188 105 192 116 Z" fill="#5A7A5A"/><path d="M146 116 V104 Q160 100 176 108 L180 116 Z" fill="#3B6D11"/>'
+    // อาดัม (เอนกาย ยื่นแขน)
+    + '<path d="M155 97 L172 93" stroke="' + skin + '" stroke-width="8" stroke-linecap="round"/>'
+    + '<circle cx="153" cy="91" r="3.2" fill="' + skin + '"/><path d="M150 89 Q153 86 156 89" stroke="#6B4A2A" stroke-width="2" fill="none"/>'
+    + '<path d="M167 93 L189 86" stroke="' + skin + '" stroke-width="2.6" stroke-linecap="round"/>'
+    + '<path d="M170 98 L184 102 L194 106" stroke="' + skin + '" stroke-width="5" fill="none" stroke-linecap="round"/>'
+    + '<path d="M168 100 L180 99 L188 95" stroke="#C9A07A" stroke-width="4.4" fill="none" stroke-linecap="round"/>'
+    // ผ้าคลุมสีแดงฝั่งพระเจ้า
+    + '<path d="M240 60 Q211 57 205 75 Q200 96 222 103 Q236 106 240 101 Z" fill="#A0523D"/>'
+    + '<path d="M240 64 Q215 63 210 77 Q207 93 224 98 Q236 100 240 97 Z" fill="#712B13"/>';
+  [[220,68],[228,71],[234,78],[226,94],[216,95],[234,90]].forEach(function (p) {
+    s += '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="2.6" fill="' + skin + '"/>';
+  });
+  s += '<path d="M214 78 L234 88" stroke="#F1EFE8" stroke-width="7" stroke-linecap="round"/>'
+    + '<circle cx="210" cy="75" r="3.4" fill="' + skin + '"/><path d="M206 74 Q209 82 213 78" stroke="#B4B2A9" stroke-width="2.4" fill="none"/>'
+    + '<path d="M207 72 Q211 68 215 72" stroke="#B4B2A9" stroke-width="2" fill="none"/>'
+    + '<path d="M211 80 L192 85" stroke="' + skin + '" stroke-width="2.6" stroke-linecap="round"/>'
+    + '<path d="M222 101 Q230 108 239 105" stroke="#5DCAA5" stroke-width="2.4" fill="none"/>';
+  return s;
+})()};
+
+
+// ภาพวาดแบนสไตล์การ์ตูน 10 ภาพใหม่ (วาดเองด้วยรูปทรงง่าย ๆ ตามองค์ประกอบของภาพต้นฉบับ)
+// p = ผ้าใบแนวตั้ง x154..232 y28..116, l = แนวนอน x146..240 y56..116
+function pth(d, c, extra) { return '<path d="' + d + '" fill="' + c + '"' + (extra || '') + '/>'; }
+function cir(x, y, rr, c, extra) { return '<circle cx="' + x + '" cy="' + y + '" r="' + rr + '" fill="' + c + '"' + (extra || '') + '/>'; }
+function ell(x, y, rx, ry, c) { return '<ellipse cx="' + x + '" cy="' + y + '" rx="' + rx + '" ry="' + ry + '" fill="' + c + '"/>'; }
+function line(d, c, w) { return '<path d="' + d + '" stroke="' + c + '" stroke-width="' + w + '" fill="none" stroke-linecap="round"/>'; }
+function seeded(seed) { return function () { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }; }
+
+P.pearl = {o: 'p', name: 'Girl with a Pearl Earring', svg:
+  r(154, 28, 78, 88, '#16140f')
+  + pth('M160 116 Q168 94 194 90 Q222 92 230 116 Z', '#A9813A') + pth('M166 116 Q172 100 186 96 L190 116 Z', '#8A6528')
+  + pth('M182 97 Q196 92 212 98 L208 105 Q196 100 185 104 Z', '#EDE6D6')
+  + ell(197, 70, 15, 19, '#EBCBA6') + pth('M204 56 Q214 68 208 86 Q204 90 198 89 Q208 78 204 56 Z', '#C9A07A')
+  + pth('M178 63 Q180 38 201 38 Q219 40 217 57 Q207 50 191 54 Q184 58 182 67 Z', '#2E5FA8')
+  + line('M186 50 Q196 44 210 47', '#5B8BD0', 2)
+  + pth('M200 38 Q214 33 221 44 L212 48 Z', '#E8C35A')
+  + pth('M213 50 Q227 70 222 98 L213 93 Q218 72 207 57 Z', '#E8C35A') + line('M216 60 Q222 76 219 92', '#C9A040', 1.5)
+  + ell(190, 68, 2.6, 2, '#2C2420') + ell(202, 67, 2.2, 1.8, '#2C2420') + cir(190.8, 67.4, .7, '#fff')
+  + ell(194, 83, 4.2, 2.2, '#C0504D') + cir(183, 88, 3.2, '#F4F1EA') + cir(182, 87, 1, '#fff')};
+
+P.scream = {o: 'p', name: 'The Scream', svg: (function () {
+  var s = r(154, 28, 78, 88, '#E8743B')
+    + line('M154 36 Q170 30 186 38 T218 36 T236 40', '#C0392B', 4) + line('M154 46 Q172 40 190 48 T232 46', '#F2A03A', 4)
+    + line('M154 56 Q170 52 188 58 T232 56', '#D8562D', 3)
+    + pth('M154 62 Q176 56 196 66 Q214 74 232 64 V100 L154 86 Z', '#2B4C7E') + pth('M196 66 Q206 80 232 76 V64 Q214 74 196 66 Z', '#3D6AA8')
+    + pth('M154 86 L232 100 V116 H154 Z', '#5A3A28')
+    + pth('M154 100 L232 74 L232 82 L154 116 Z', '#9A6A3A') + line('M154 96 L232 70', '#6B4422', 2) + line('M170 104 L170 92 M190 98 L190 86 M210 90 L210 79', '#6B4422', 1.5)
+    + pth('M178 116 Q180 98 188 92 Q196 92 200 104 L202 116 Z', '#2C2C3A')
+    + ell(191, 84, 8, 10.5, '#E8D9B0') + ell(187.5, 82, 1.8, 2.6, '#2C2C3A') + ell(194.5, 82, 1.8, 2.6, '#2C2C3A') + ell(191, 90, 1.8, 3, '#2C2C3A')
+    + pth('M182 80 Q178 88 182 96 L185 95 Q182 88 185 81 Z', '#E8D9B0') + pth('M200 80 Q204 88 200 96 L197 95 Q200 88 197 81 Z', '#E8D9B0')
+    + pth('M214 84 L216 76 L218 84 Z', '#2C2C3A') + pth('M222 82 L224 74 L226 82 Z', '#2C2C3A');
+  return s;
+})()};
+
+P.sunflowers = {o: 'p', name: 'Sunflowers', svg: (function () {
+  function flower(x, y, rr) {
+    var s = '';
+    for (var i = 0; i < 12; i++) {
+      var a = i * Math.PI / 6;
+      s += ell(0, 0, rr * .55, rr * .22, i % 2 ? '#F2B705' : '#E39B05').replace('<ellipse', '<ellipse transform="translate(' + (x + Math.cos(a) * rr * .8).toFixed(1) + ' ' + (y + Math.sin(a) * rr * .8).toFixed(1) + ') rotate(' + (a * 180 / Math.PI).toFixed(0) + ')"');
+    }
+    return s + cir(x, y, rr * .5, '#7A4B1A') + cir(x - rr * .12, y - rr * .12, rr * .2, '#9C6428');
+  }
+  var s = r(154, 28, 78, 88, '#EBCB4F') + r(154, 98, 78, 18, '#D9A441') + r(154, 98, 78, 2, '#B8862B')
+    + pth('M178 98 Q176 80 184 76 H204 Q212 80 210 98 Z', '#E0B04A') + line('M180 86 H208', '#2E5FA8', 2)
+    + line('M190 76 L184 60 M196 76 L200 50 M200 76 L214 58 M188 76 L172 66', '#5A7A2A', 2.2);
+  [[184, 58, 9], [201, 48, 10], [216, 60, 9], [171, 68, 8], [205, 70, 8], [176, 50, 7], [222, 76, 7]].forEach(function (f) { s += flower(f[0], f[1], f[2]); });
+  return s;
+})()};
+
+P.cafe = {o: 'p', name: 'Café Terrace at Night', svg: (function () {
+  var s = r(154, 28, 78, 88, '#1F3A7A')
+    + pth('M154 28 H178 L180 92 H154 Z', '#2B3F6B') + pth('M212 28 H232 V100 L210 96 Z', '#22355E') + r(214, 40, 6, 8, '#F2C12E') + r(222, 56, 5, 7, '#F2C12E') + r(214, 72, 6, 8, '#E9A23B')
+    + pth('M178 40 L208 50 L206 60 L176 58 Z', '#F2C12E') + pth('M176 58 L206 60 L204 64 L176 63 Z', '#C98A1A')
+    + pth('M154 92 L178 62 L204 64 L232 100 V116 H154 Z', '#6B7A9C') + pth('M154 92 L178 62 L190 63 L172 116 H154 Z', '#E9A23B')
+    + pth('M178 62 L204 64 L200 74 L174 72 Z', '#F6D66A');
+  var rnd = seeded(31);
+  for (var i = 0; i < 24; i++) s += cir((186 + rnd() * 44).toFixed(1), (80 + rnd() * 34).toFixed(1), 1, '#4A5878');
+  [[164, 98], [172, 88], [160, 108]].forEach(function (t) { s += ell(t[0], t[1], 5, 1.8, '#F4F1EA') + r(t[0] - .6, t[1], 1.2, 6, '#3A2A1E'); });
+  [[190, 34], [200, 42], [224, 34], [184, 46], [214, 30]].forEach(function (p, i) { s += cir(p[0], p[1], i % 2 ? 2 : 2.8, '#F7E08A') + cir(p[0], p[1], i % 2 ? 3.6 : 4.6, 'none', ' stroke="#F7E08A" stroke-width=".8" opacity=".6"'); });
+  return s;
+})()};
+
+P.impression = {o: 'l', name: 'Impression, Sunrise', svg: (function () {
+  var s = r(146, 56, 94, 60, '#8FA8B8') + r(146, 56, 94, 22, '#B7A9A0') + r(146, 70, 94, 10, '#A7A7AE')
+    + line('M150 76 L152 62 M158 76 L160 64 M226 78 L228 60 M232 78 L234 66', '#7D8E9C', 1.2)
+    + cir(198, 72, 5.5, '#F25C05') + line('M178 68 Q198 60 220 70', '#F2A07A', 2);
+  [84, 90, 96, 102, 108].forEach(function (y, i) { s += r(194 - i, y, 9 + i * 2, 2, i % 2 ? '#F28A3C' : '#F25C05'); });
+  var rnd = seeded(9);
+  for (var i = 0; i < 18; i++) s += r((148 + rnd() * 88).toFixed(1), (82 + rnd() * 32).toFixed(1), 6 + rnd() * 8, 1.4, '#6E8EA3');
+  s += pth('M162 104 Q170 100 180 104 L176 108 H166 Z', '#2F3E46') + r(170, 94, 1.5, 10, '#2F3E46')
+    + pth('M182 96 Q188 93 194 96 L191 99 H185 Z', '#3D4E58') + r(187, 90, 1.2, 6, '#3D4E58')
+    + pth('M210 100 Q216 97 222 100 L219 103 H213 Z', '#4A5C66');
+  return s;
+})()};
+
+P.jatte = {o: 'l', name: 'A Sunday on La Grande Jatte', svg: (function () {
+  var s = r(146, 56, 94, 60, '#6FA8C9') + pth('M146 56 H240 V64 Q214 60 190 66 Q168 70 146 66 Z', '#8DBFD8')
+    + pth('M146 116 V82 Q176 74 206 80 Q226 84 240 78 V116 Z', '#5A8F3C') + pth('M146 116 V96 Q180 90 240 100 V116 Z', '#3E6E2A')
+    + pth('M208 56 H240 V82 Q226 84 214 78 Q204 70 208 56 Z', '#2F5A26') + cir(214, 62, 9, '#3E6E2A') + cir(232, 66, 10, '#2F5A26')
+    + pth('M160 70 L176 66 L174 70 Z', '#F4F1EA') + r(168, 60, 1, 8, '#F4F1EA');
+  var rnd = seeded(1884), cols = ['#F2C14E', '#E86A5A', '#F4F1EA', '#9ACD63', '#4A86C5'];
+  for (var i = 0; i < 70; i++) s += cir((146 + rnd() * 94).toFixed(1), (76 + rnd() * 40).toFixed(1), .7, cols[Math.floor(rnd() * cols.length)], ' opacity=".8"');
+  s += pth('M218 116 Q216 98 220 90 Q224 86 228 90 Q234 100 236 116 Z', '#2C2C3A') + cir(224, 86, 3, '#2C2C3A') + pth('M214 82 Q224 74 234 82 Z', '#2C2C3A') + r(223.5, 80, 1, 6, '#2C2C3A')
+    + pth('M228 116 L230 100 L234 104 L234 116 Z', '#1E1E28') + r(206, 96, 4, 20, '#1E1E28') + r(205, 92, 6, 4, '#1E1E28') + cir(208, 90, 2.4, '#C9A07A')
+    + pth('M170 108 Q176 100 186 104 L184 112 H170 Z', '#E86A5A') + cir(178, 99, 2.2, '#C9A07A') + pth('M172 96 Q178 90 184 96 Z', '#F4F1EA');
+  return s;
+})()};
+
+P.kiss = {o: 'p', name: 'The Kiss', svg: (function () {
+  var s = r(154, 28, 78, 88, '#9C7A2E');
+  var rnd = seeded(1908);
+  for (var i = 0; i < 40; i++) s += r((154 + rnd() * 76).toFixed(1), (28 + rnd() * 70).toFixed(1), 1.4, 1.4, '#C9A040');
+  s += pth('M154 100 Q190 92 232 104 V116 H154 Z', '#5F8A3A');
+  var cols = ['#E86A5A', '#F4F1EA', '#4A86C5', '#F2C14E', '#C25A9B'];
+  for (var j = 0; j < 26; j++) s += cir((156 + rnd() * 74).toFixed(1), (102 + rnd() * 13).toFixed(1), 1.1, cols[j % 5]);
+  s += pth('M178 112 Q170 80 182 54 Q192 40 206 44 Q220 54 214 84 Q210 104 206 112 Z', '#E3B23C')
+    + pth('M182 104 Q178 80 186 60 Q194 50 200 56 Q196 80 196 104 Z', '#D9A030');
+  [[186, 62], [190, 72], [186, 84], [192, 94], [184, 98], [190, 82]].forEach(function (p) { s += r(p[0], p[1], 3, 6, '#1E1E1E') + r(p[0] + .8, p[1] + 1, 1.4, 2, '#F4F1EA'); });
+  [[204, 66], [208, 78], [202, 90], [210, 96], [206, 104]].forEach(function (p, i) { s += cir(p[0], p[1], 2.6, cols[i]) + cir(p[0], p[1], 1, '#F2C14E'); });
+  s += pth('M184 50 Q190 36 202 40 Q206 46 200 52 Q192 54 186 56 Z', '#1E1E1E') + line('M190 42 Q194 36 200 38', '#5F8A3A', 2)
+    + pth('M200 50 Q210 48 214 56 Q214 64 206 66 Q198 62 200 50 Z', '#EBCBA6') + pth('M212 54 Q220 56 220 66 L214 64 Z', '#7A4B1A')
+    + line('M203 58 Q205 60 207 59', '#8A5A40', 1) + cir(210, 50, 1.4, '#E86A5A') + cir(214, 52, 1.2, '#4A86C5');
+  return s;
+})()};
+
+P.wanderer = {o: 'p', name: 'Wanderer above the Sea of Fog', svg:
+  r(154, 28, 78, 88, '#C8D2DE') + r(154, 28, 78, 24, '#DCE3EB')
+  + pth('M154 66 L170 54 L182 62 L196 50 L210 60 L222 52 L232 58 V76 H154 Z', '#9AA4B2')
+  + pth('M154 74 Q172 66 188 74 T232 72 V82 H154 Z', '#E8ECF1') + pth('M154 82 L166 76 L178 84 L154 92 Z', '#7D8796') + pth('M232 78 L214 84 L232 92 Z', '#7D8796')
+  + pth('M154 90 Q176 82 198 90 T232 88 V96 H154 Z', '#F2F4F7')
+  + pth('M154 116 V100 L170 96 L182 102 L192 94 L204 98 L214 104 L232 108 V116 Z', '#2F2A26') + pth('M178 106 L192 94 L196 100 L186 108 Z', '#45403A')
+  + pth('M187 96 L189 76 Q193 70 197 76 L199 96 L196 96 L194 86 L192 96 Z', '#1E1F24') + pth('M186 80 L184 90 L187 90 Z', '#1E1F24') + pth('M200 80 L202 90 L199 90 Z', '#1E1F24')
+  + cir(193, 71, 3.6, '#1E1F24') + pth('M190 69 Q193 64 197 69 Q196 72 193 72 Z', '#8A6A3A') + line('M200 88 L206 100', '#1E1F24', 1.2)};
+
+P.mondrian = {o: 'p', name: 'Composition with Red, Blue and Yellow', svg:
+  r(154, 28, 78, 88, '#F2EFE6') + r(176, 28, 56, 60, '#D9291C') + r(154, 92, 20, 24, '#1F4FA0') + r(222, 104, 10, 12, '#F2C230')
+  + r(173, 28, 4, 88, '#111') + r(154, 86, 78, 4, '#111') + r(154, 60, 20, 3, '#111') + r(218, 90, 3, 26, '#111') + r(218, 102, 14, 3, '#111')};
+
+// สถานที่ 8 ภาพ + ฟูจิแบบปกติ (วาดเองสไตล์ภาพวาดแบน)
+function poly(pts, c) { return '<path d="M' + pts.map(function (p) { return p[0].toFixed(1) + ' ' + p[1].toFixed(1); }).join(' L') + ' Z" fill="' + c + '"/>'; }
+function arch(x, y, w, h, c) { var rr = w / 2; return '<path d="M' + x + ' ' + (y + h) + ' V' + (y + rr) + ' A' + rr + ' ' + rr + ' 0 0 1 ' + (x + w) + ' ' + (y + rr) + ' V' + (y + h) + ' Z" fill="' + c + '"/>'; }
+function rO(x, y, w, h, c, o) { return '<rect x="' + (+x).toFixed(1) + '" y="' + (+y).toFixed(1) + '" width="' + (+w).toFixed(1) + '" height="' + h + '" fill="' + c + '" opacity="' + o + '"/>'; }
+function cloud(x, y, w) { return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="4" rx="2" fill="#F4F9FC"/><rect x="' + (x + w * .25) + '" y="' + (y - 2.6) + '" width="' + (w * .45) + '" height="4" rx="2" fill="#F4F9FC"/>'; }
+
+P.fuji = {o: 'l', name: 'ภูเขาไฟฟูจิ', svg: (function () {
+  var s = r(146, 56, 94, 60, '#8EC5EA') + r(146, 56, 94, 14, '#6AB0E0') + cloud(152, 66, 20) + cloud(212, 62, 16);
+  s += pth('M150 106 Q178 100 188 80 L190.6 68 H197.4 L200 80 Q210 100 238 106 Z', '#4F6D8F')
+    + pth('M194 68 H197.4 L200 80 Q210 100 238 106 H212 Q201 94 196.5 80 Z', '#3F5A78')
+    + pth('M190.6 68 H197.4 L200.6 79 L198 77 L196 82 L193.8 76.5 L191.4 81 L189.4 77 L187.6 79.6 Z', '#F7FAFC');
+  s += pth('M146 116 V100 Q170 96 196 102 Q220 106 240 100 V116 Z', '#3E7D5A');
+  for (var k = 0; k < 5; k++) {
+    var y = 104 - k * 5, w = 14 - k * 1.6;
+    s += pth('M' + (166 - w / 2 - 2) + ' ' + y + ' H' + (166 + w / 2 + 2) + ' L' + (166 + w / 2) + ' ' + (y - 1.6) + ' H' + (166 - w / 2) + ' Z', '#7A1C1C')
+      + r(166 - w / 2 + 1, y, w - 2, 3.4, '#C8102E');
+  }
+  s += line('M166 82 V77', '#5A3A1E', .8);
+  // ต้นซากุระ: ลำต้น + พุ่มดอกหลายชั้น
+  [[153.5, 100, 6], [161, 105, 4.6], [226, 101, 7], [233, 97, 5], [214, 108, 4]].forEach(function (b) {
+    var x = b[0], y = b[1], z = b[2];
+    s += line('M' + x + ' ' + (y + z * 1.3) + ' V' + y + ' M' + x + ' ' + (y + z * .4) + ' l' + (z * .5) + ' ' + (-z * .5), '#5A3A1E', z * .22)
+      + cir(x - z * .6, y, z * .7, '#F2A3BC') + cir(x + z * .6, y - z * .1, z * .72, '#F6B7C9') + cir(x, y - z * .6, z * .8, '#F9CFDB')
+      + cir(x - z * .3, y - z * .4, z * .18, '#E77FA3') + cir(x + z * .5, y - z * .2, z * .15, '#E77FA3') + cir(x + z * .1, y - z * .9, z * .14, '#E77FA3');
+  });
+  return s;
+})()};
+
+P.eiffel = {o: 'p', name: 'หอไอเฟล', svg: (function () {
+  var s = r(154, 28, 78, 88, '#2F2C6E') + r(154, 52, 78, 20, '#4E3F86') + r(154, 72, 78, 16, '#8C5C9A') + r(154, 88, 78, 12, '#E58E7A') + r(154, 100, 78, 16, '#F2B880');
+  var rnd = seeded(1889);
+  for (var i = 0; i < 16; i++) s += r((156 + rnd() * 74).toFixed(1), (30 + rnd() * 34).toFixed(1), .9, .9, '#F7E08A');
+  s += cir(218, 40, 4, '#FCE3A0');
+  s += pth('M154 116 V104 Q166 98 176 104 Q186 99 193 105 Q202 99 212 104 Q222 98 232 104 V116 Z', '#2C4A3E') + r(154, 111, 78, 5, '#1F3530');
+  var T = '#E3A83B', K = '#9C6B1F';
+  s += line('M193 29 V37', T, 1) + pth('M191.8 36 H194.2 L197.4 58 H188.6 Z', T) + r(185.5, 57.5, 15, 2.4, K)
+    + pth('M188 60 H198 L204.5 80 H181.5 Z', T) + r(177.5, 79.5, 31, 3, K)
+    + pth('M180 82.5 H206 L220 111 H210.5 Q193 90 175.5 111 H166 Z', T)
+    + line('M190.2 42 L195.8 50 M195.8 42 L190.2 50 M189.6 50 L196.4 57 M196.4 50 L189.6 57', K, .6)
+    + line('M188.6 62 L201 78 M197.4 62 L185 78 M193 61 V79', K, .7)
+    + line('M181 84 L193 96 M205 84 L193 96 M171 108 L183 88 M215 108 L203 88', K, .8);
+  [[193, 46], [190, 70], [197, 66], [184, 92], [203, 96], [193, 30]].forEach(function (p) { s += cir(p[0], p[1], .9, '#FFF6D6', ' class="star"'); });
+  return s;
+})()};
+
+P.pisa = {o: 'p', name: 'หอเอนปิซ่า', svg: (function () {
+  var s = r(154, 28, 78, 88, '#7EC8F0') + r(154, 28, 78, 22, '#5DB3E8') + cloud(160, 40, 20) + cloud(206, 50, 18);
+  s += pth('M154 100 V86 L162 80 L170 86 V100 Z', '#EDE6D6') + line('M154 90 H170 M154 94 H170', '#C9BDA8', .8);
+  s += r(154, 100, 78, 16, '#6DBE45') + pth('M154 110 Q193 104 232 108 V112 Q193 108 154 114 Z', '#E8DCC2');
+  // ตัวหอ เอนไปทางขวา 7 องศา (คำนวณมุมเอง ไม่ใช้ transform)
+  var bx = 193, by = 106, th = 7 * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th);
+  function P2(lx, ly) { return [bx + lx * c + ly * sn, by + lx * sn - ly * c]; }
+  function quad(x0, y0, x1, y1, col) { return poly([P2(x0, y0), P2(x1, y0), P2(x1, y1), P2(x0, y1)], col); }
+  s += quad(-11, 0, 11, 10, '#F2EBDD');
+  for (var t = 0; t < 6; t++) {
+    var y0 = 10 + t * 8;
+    s += quad(-11, y0, 11, y0 + 8, '#F2EBDD') + quad(-11.6, y0, 11.6, y0 + 1, '#CFC4AE');
+    for (var k = 0; k < 5; k++) s += quad(-9 + k * 4.2, y0 + 2.4, -6.6 + k * 4.2, y0 + 6.6, '#B8AC94');
+  }
+  s += quad(6.5, 0, 11, 58, '#DCD2BE');
+  for (var k2 = 0; k2 < 3; k2++) s += quad(-9 + k2 * 4.2, 3, -6.6 + k2 * 4.2, 8, '#B8AC94');
+  s += quad(-8, 58, 8, 66, '#F2EBDD') + quad(-8.6, 58, 8.6, 59, '#CFC4AE') + quad(-5, 60, -2.4, 64.5, '#B8AC94') + quad(1, 60, 3.6, 64.5, '#B8AC94') + quad(-8.6, 66, 8.6, 68, '#CFC4AE');
+  // นักท่องเที่ยวทำท่าดันหอ (มุมกล้องหลอกตา)
+  s += cir(222, 91, 2.4, '#E9C9A6') + pth('M219.5 94 H224.5 L225 106 H219 Z', '#E63946') + r(219.5, 106, 2, 8, '#2B4C7E') + r(222.5, 106, 2, 8, '#2B4C7E')
+    + line('M220 95.5 L207.5 86.5 M220.5 98 L207.2 89.6', '#E9C9A6', 1.4);
+  return s;
+})()};
+
+P.colosseum = {o: 'l', name: 'โคลอสเซียม', svg: (function () {
+  var s = r(146, 56, 94, 60, '#9CCBEA') + r(146, 80, 94, 16, '#F2D7A6') + cloud(214, 64, 18) + cloud(156, 66, 14);
+  s += pth('M150 108 V71 Q184 64 206 69 L212 70 V78 L222 79 V87 L232 89 V97 L236 98 V108 Z', '#D9A86C')
+    + pth('M200 68.6 Q203 68.8 206 69 L212 70 V78 L222 79 V87 L232 89 V97 L236 98 V108 H200 Z', '#C48E55');
+  [[71, 7, 206, 'win'], [79, 8, 222, 'a'], [88, 9, 232, 'a'], [98, 9, 236, 'a']].forEach(function (row) {
+    s += r(150, row[0] - 1, row[2] - 150, 1.2, '#B97E47');
+    for (var x = 152.5; x + 4.5 < row[2] - 1; x += 7.2) {
+      s += row[3] === 'win' ? r(x + 1, row[0] + 2, 2.4, 3, '#8A5A33') : arch(x, row[0] + 1, 4.5, row[1] - 1.5, '#7A4B2A');
+    }
+  });
+  s += r(146, 108, 94, 8, '#C9B48A') + r(146, 108, 94, 1.2, '#B39C70');
+  s += line('M156 108 V96', '#5A3A1E', 1.4) + ell(156, 95, 7, 2.6, '#3F6B3A') + line('M233 108 V99', '#5A3A1E', 1.2) + ell(233, 98.5, 5, 2.2, '#3F6B3A');
+  return s;
+})()};
+
+P.venice = {o: 'l', name: 'เวนิส', svg: (function () {
+  var s = r(146, 56, 94, 60, '#F6C177') + r(146, 56, 94, 14, '#E8996B');
+  s += ell(193, 80, 7, 6, '#B7C6C2') + r(186, 80, 14, 8, '#D9D4C3') + line('M193 74 V70', '#B7C6C2', 1) + cir(193, 69.5, .9, '#B7C6C2');
+  function block(b) {
+    var t = r(b[0], b[1], b[2], 96 - b[1], b[3]) + r(b[0], b[1] - 1.5, b[2], 1.5, '#8A4B2A');
+    for (var wy = b[1] + 3; wy < 90; wy += 6) for (var wx = b[0] + 1.6; wx + 2 < b[0] + b[2]; wx += 3.6) t += arch(wx, wy, 1.8, 3, '#5A3A2A');
+    return t;
+  }
+  [[146, 66, 12, '#E3A75C'], [158, 72, 10, '#C8553D'], [168, 76, 8, '#E6A0A0'], [176, 80, 6, '#F1DEB5'],
+   [226, 64, 14, '#F1DEB5'], [216, 70, 10, '#D9824B'], [208, 76, 8, '#E3A75C'], [202, 80, 6, '#C8553D']].forEach(function (b) { s += block(b); });
+  s += pth('M146 96 L182 90 H204 L240 96 V116 H146 Z', '#2E8B9A') + pth('M182 90 H204 L208 96 H178 Z', '#3FA3B1');
+  [[150, 100, 14], [170, 106, 18], [200, 102, 16], [214, 110, 18], [158, 112, 12]].forEach(function (w) { s += line('M' + w[0] + ' ' + w[1] + ' h' + w[2], '#6CC3CF', 1); });
+  [[170, 92], [174, 92], [214, 92], [218, 92]].forEach(function (p, i) {
+    for (var k = 0; k < 4; k++) s += r(p[0], p[1] + k * 3, 1.4, 3, k % 2 ? '#F4F1EA' : (i < 2 ? '#2B5C8A' : '#C8102E'));
+  });
+  // กอนโดลา: คนพายยืนท้ายเรือ หัวเรือมีเหล็กประดับ
+  s += pth('M176 108 Q196 113 218 106 L221 104 Q219 108 214 109.5 Q196 114.5 178 110 Z', '#141414') + pth('M219 104 L223 100 L221.5 104.5 Z', '#C9A040')
+    + r(194, 106, 10, 2.6, '#7A1C3E')
+    + r(179.5, 98, 3, 6, '#C8102E') + r(179.5, 99.2, 3, 1, '#F4F1EA') + r(179.5, 101.4, 3, 1, '#F4F1EA') + cir(181, 96.4, 1.6, '#E9C9A6') + ell(181, 94.9, 3, .9, '#E8C35A')
+    + r(179.8, 104, 1, 4.4, '#141414') + r(181.4, 104, 1, 4.4, '#141414') + line('M183 99 L190 112', '#8A5A2B', .9);
+  return s;
+})()};
+
+P.jungfrau = {o: 'l', name: 'จุงเฟรา สวิตเซอร์แลนด์', svg: (function () {
+  var s = r(146, 56, 94, 60, '#4BA3E3') + r(146, 56, 94, 12, '#3B8FD3');
+  s += pth('M146 96 L160 76 L166 80 L176 66 L186 78 L196 70 L212 62 L226 76 L232 72 L240 80 V96 Z', '#6E7B8B')
+    + pth('M160 76 L166 80 L170 77 L176 66 L180 72 L176 74 L172 78 L166 84 L162 80 Z', '#F7FAFC')
+    + pth('M196 70 L212 62 L226 76 L222 75 L218 80 L214 74 L208 78 L204 74 L198 77 Z', '#F7FAFC')
+    + pth('M212 62 L226 76 L222 75 L218 80 L214 74 Z', '#D7E3EF')
+    + pth('M226 76 L232 72 L240 80 V83 L234 78 L230 81 Z', '#F7FAFC');
+  s += pth('M146 116 V92 Q170 86 196 92 Q220 98 240 90 V116 Z', '#5DBB4A') + pth('M146 116 V102 Q180 96 240 104 V116 Z', '#3E9A3A');
+  var rnd = seeded(4158), fl = ['#F4F1EA', '#FFD166', '#E86A9A', '#B388EB'];
+  for (var i = 0; i < 28; i++) s += r((147 + rnd() * 92).toFixed(1), (98 + rnd() * 17).toFixed(1), 1, 1, fl[i % 4]);
+  s += line('M146 100 Q190 92 240 98', '#7A5A3A', 1.2)
+    // รถไฟฟันเฟือง 2 ตู้
+    + r(172, 89.8, 13, 5.6, '#D62828') + r(186, 89, 13, 5.6, '#D62828') + r(172, 89.4, 13, 1.2, '#9E1B1B') + r(186, 88.6, 13, 1.2, '#9E1B1B')
+    + r(173.5, 91.4, 2.4, 2, '#FCE3A0') + r(177.3, 91.4, 2.4, 2, '#FCE3A0') + r(181.1, 91.4, 2.4, 2, '#FCE3A0')
+    + r(187.5, 90.6, 2.4, 2, '#FCE3A0') + r(191.3, 90.6, 2.4, 2, '#FCE3A0') + pth('M199 89 L201 91 V94.6 H199 Z', '#D62828') + r(199.2, 90.8, 1.2, 1.8, '#FCE3A0')
+    + cir(175, 95.8, 1, '#2C2C2C') + cir(182, 95.8, 1, '#2C2C2C') + cir(189, 95, 1, '#2C2C2C') + cir(196, 95, 1, '#2C2C2C');
+  s += r(212, 92, 16, 12, '#A0662F') + pth('M209 93 L220 85 L231 93 Z', '#5A3A1E') + r(215, 95, 3, 3, '#FCE3A0') + r(222, 95, 3, 3, '#FCE3A0')
+    + r(214.5, 98.6, 4, 1.4, '#E63946') + r(221.5, 98.6, 4, 1.4, '#E63946') + r(218.5, 99, 3, 5, '#5A3A1E')
+    + line('M232 104 V84', '#8A8A8A', .8) + r(232.4, 84, 6, 5, '#D62828') + r(234.9, 85, 1, 3, '#fff') + r(233.9, 86, 3, 1, '#fff');
+  return s;
+})()};
+
+P.trevi = {o: 'l', name: 'น้ำพุเทรวี', svg: (function () {
+  var s = r(146, 56, 94, 60, '#9CCBEA');
+  s += r(146, 62, 94, 36, '#E8DCC0') + r(146, 60, 94, 3, '#D3C4A2') + r(178, 57, 30, 5, '#E8DCC0') + r(178, 56, 30, 1.4, '#D3C4A2');
+  for (var wx = 149; wx < 176; wx += 7) s += r(wx, 66, 3.4, 5, '#9C8E70') + r(wx, 78, 3.4, 5, '#9C8E70');
+  for (var wx2 = 212; wx2 < 238; wx2 += 7) s += r(wx2, 66, 3.4, 5, '#9C8E70') + r(wx2, 78, 3.4, 5, '#9C8E70');
+  [180, 184, 202, 206].forEach(function (x) { s += r(x, 63, 2.6, 30, '#F4F1EA') + r(x - .4, 62, 3.4, 1.4, '#D3C4A2'); });
+  s += arch(188.5, 66, 9, 22, '#CBBF9F') + arch(190, 68, 6, 18, '#BBAE8C');
+  s += cir(193, 74, 2, '#F7F3EA') + pth('M190.5 76.5 H195.5 L197 88 H189 Z', '#F7F3EA') + line('M195.5 78 L199 75', '#F7F3EA', 1.2);
+  s += cir(173, 73, 1.4, '#F4F1EA') + r(171.6, 74.6, 2.8, 6, '#F4F1EA') + cir(213, 73, 1.4, '#F4F1EA') + r(211.6, 74.6, 2.8, 6, '#F4F1EA');
+  s += pth('M160 104 Q166 94 176 96 Q182 90 190 94 Q196 88 204 94 Q212 92 218 98 Q226 96 230 104 Z', '#D3C6A6')
+    + pth('M172 104 Q180 98 188 100 Q196 96 204 100 Q212 98 218 104 Z', '#BFB18F');
+  s += line('M186 90 Q188 96 186 104 M193 89 V104 M200 90 Q198 96 200 104', '#E9F7FA', 1.8) + line('M178 98 Q176 102 178 105 M210 98 Q212 102 210 105', '#E9F7FA', 1.2);
+  s += r(146, 104, 94, 12, '#3FB8C9') + r(146, 104, 94, 1.4, '#F4F1EA') + r(146, 113, 94, 3, '#D3C4A2');
+  [[156, 108], [170, 110], [214, 109], [228, 107], [196, 110]].forEach(function (p) { s += line('M' + p[0] + ' ' + p[1] + ' h7', '#9EE3EC', .9); });
+  [[166, 107], [204, 108], [222, 110]].forEach(function (p) { s += cir(p[0], p[1], .8, '#FFD166', ' class="star"'); });
+  return s;
+})()};
+
+P.shanghai = {o: 'l', name: 'เซี่ยงไฮ้ จีน', svg: (function () {
+  var s = r(146, 56, 94, 60, '#1B1F45') + r(146, 76, 94, 18, '#2B2560');
+  var rnd = seeded(2016);
+  [[146, 84, 8], [154, 80, 6], [160, 86, 7], [196, 82, 6], [224, 78, 7], [231, 84, 9]].forEach(function (b) {
+    s += r(b[0], b[1], b[2], 96 - b[1], '#2E3A6B');
+    for (var k = 0; k < 6; k++) s += r((b[0] + 1 + rnd() * (b[2] - 2)).toFixed(1), (b[1] + 2 + rnd() * (94 - b[1] - 4)).toFixed(1), .8, .8, '#FCE3A0');
+  });
+  // Shanghai Tower (บิดเกลียว), SWFC (ที่เปิดขวด), Jin Mao (ขั้นบันได)
+  s += pth('M203 96 L203.5 66 Q205 60 208.5 58 L210 62 L211 96 Z', '#8FB8DA') + line('M204.5 90 Q207 76 209.5 60', '#C9E0F2', .7);
+  s += pth('M213 96 L214.5 66 H220.5 L222 96 Z', '#6E8FB5') + r(215.6, 67.5, 3.8, 2.6, '#2B2560');
+  s += pth('M188 96 V76 L189.5 72 V68 L191 64 L192.5 68 V72 L194 76 V96 Z', '#C9B37A') + line('M188 82 H194 M188 88 H194', '#9C8650', .6);
+  // หอไข่มุกตะวันออก
+  s += line('M172 96 L176 84 M180 96 L176 84 M176 96 V58', '#C9C9D6', 1.2) + line('M176 58 V52', '#C9C9D6', .7)
+    + cir(176, 86, 5, '#E8558A') + cir(176, 86, 5, 'none', ' stroke="#FF9CC2" stroke-width=".8"') + cir(176, 70, 3.4, '#E8558A') + cir(176, 62, 1.6, '#E8558A') + cir(175, 84.6, 1.4, '#FFB3D1');
+  // แม่น้ำหวงผู่ + เงาไฟ
+  s += r(146, 96, 94, 20, '#141A3A') + r(146, 96, 94, 1.2, '#3A3A7A');
+  [['#E8558A', 176], ['#8FB8DA', 207], ['#C9B37A', 191], ['#FCE3A0', 160], ['#6E8FB5', 217]].forEach(function (c) {
+    for (var k = 0; k < 4; k++) s += rO(c[1] - 3 + rnd() * 2, 99 + k * 4, 4 + rnd() * 4, 1, c[0], .55);
+  });
+  s += pth('M150 110 H170 L167 113 H153 Z', '#2E3A6B') + r(154, 107.5, 12, 2.6, '#FCE3A0');
+  return s;
+})()};
+
+P.merlion = {o: 'l', name: 'เมอร์ไลออน สิงคโปร์', svg: (function () {
+  var s = r(146, 56, 94, 60, '#F7A072') + r(146, 56, 94, 14, '#C46BAE') + r(146, 70, 94, 10, '#E88A8A');
+  [[150, 78, 6], [157, 74, 5], [163, 80, 6], [230, 76, 6], [236, 82, 4]].forEach(function (b) { s += r(b[0], b[1], b[2], 96 - b[1], '#5C4A7A'); });
+  // Marina Bay Sands
+  s += pth('M196 96 L198 74 H203 L204 96 Z', '#6B5B8A') + pth('M206 96 L208 74 H213 L214 96 Z', '#6B5B8A') + pth('M216 96 L218 74 H223 L224 96 Z', '#6B5B8A')
+    + pth('M194 72 H227 Q229 72 228 74 H195 Q193 73 194 72 Z', '#4E3F6E');
+  s += r(146, 96, 94, 20, '#2B6CB0') + r(146, 96, 94, 1.2, '#7FB3E0');
+  [[198, 100], [208, 104], [218, 101], [228, 107]].forEach(function (p) { s += line('M' + p[0] + ' ' + p[1] + ' h6', '#F7A072', 1); });
+  // เมอร์ไลออน: ฐานหิน ตัวปลา หัวสิงโต
+  s += pth('M150 116 V104 Q160 100 174 102 L178 116 Z', '#8A8A92');
+  s += pth('M156 104 Q152 96 156 88 Q158 82 164 80 L170 84 Q164 88 164 96 Q166 102 172 104 Z', '#ECE8DE')
+    + line('M158 94 q2 -2 4 0 M157 99 q2 -2 4 0 M160 89 q2 -2 4 0', '#C9C3B4', .7)
+    + pth('M156 92 Q150 86 152 80 Q154 84 158 86 Z', '#ECE8DE');
+  s += cir(169, 79, 6.6, '#E2DCCD') + cir(170, 79, 5, '#F4F1EA') + ell(174, 80, 2.6, 1.8, '#F4F1EA') + cir(171.5, 77.4, .8, '#5A5A5A') + pth('M174.5 81 L177 82 L174.5 82.6 Z', '#8A8A92');
+  s += '<path d="M177 81.5 Q190 76 198 98" stroke="#DDF1FF" stroke-width="2" fill="none"/><path d="M177 82.5 Q189 79 196 98" stroke="#A9D6F5" stroke-width="1" fill="none"/>'
+    + ell(197, 98, 3, 1, '#DDF1FF');
+  return s;
+})()};
+
+// ---------- วนภาพ: วาดเสร็จ 1 ภาพ (8 วินาที) แล้วขึ้นผ้าใบใหม่ ----------
+var POOL = ['mona', 'supper', 'wave', 'wat', 'starry', 'adam', 'pollock', 'pearl', 'scream', 'sunflowers', 'cafe', 'impression', 'jatte', 'kiss', 'wanderer', 'fuji', 'mondrian', 'eiffel', 'pisa', 'colosseum', 'venice', 'jungfrau', 'trevi', 'shanghai', 'merlion'];
+var art = {sc: 0, sg: 4};   // Claude เริ่ม Mona Lisa, Local AI เริ่ม Starry Night (ห่างกัน 4 ภาพ ไม่ซ้ำกันพร้อมกัน)
+function paint(id) {
+  var p = P[POOL[art[id] % POOL.length]];
+  if (!p.svg) p.svg = pix(p.o, p.d);
+  document.querySelector('#' + id + ' .art').innerHTML = easel(p.o) + frame(p.o) + p.svg + cover(p.o, p.d ? p.d.h : 14);
+}
+function paintAll() { paint('sc'); paint('sg'); }
+var cycle = null;
+function restartCycle() {
+  clearInterval(cycle);
+  paintAll();
+  cycle = setInterval(function () { art.sc++; art.sg++; paintAll(); }, 8000);
+}
+function setArt(c, l) { art.sc = c; art.sg = l; paintAll(); }   // ใช้ทดสอบ
+
+// ---------- สถานะ: ส่งมาจากแอปผ่าน update({...}) ----------
+var S = {state: 'work', agents: ['claude'], label: '', t0: Date.now(), frozen: null, doneUntil: 0};
+var shownState = null;
+var $ = function (i) { return document.getElementById(i); };
+function fmt(s) {
+  s = Math.max(0, Math.floor(s));
+  var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0');
+}
+function title() {
+  var c = S.agents.indexOf('claude') >= 0, l = S.agents.indexOf('local') >= 0;
+  var who = c && l ? 'Claude และ Local AI' : (l ? 'Local AI' : 'Claude');
+  if (S.state === 'wait') return who + ' รอคุณอนุมัติ';
+  if (S.state === 'done') return 'เสร็จแล้ว';
+  return l && !c ? 'Local AI กำลังสร้างภาพ' : who + ' กำลังทำงาน';
+}
+function render() {
+  var now = Date.now();
+  var el = S.frozen != null ? S.frozen : (now - S.t0) / 1000;
+  var pre = S.label ? S.label + ' · ' : '';
+  var onlyLocal = S.agents.length === 1 && S.agents[0] === 'local';
+  var sub = S.state === 'wait' ? pre + 'รอมา ' + fmt(el)
+          : S.state === 'done' ? pre + 'ใช้เวลา ' + fmt(el)
+          : pre + fmt(el);
+  var hint = S.state === 'wait' ? 'ขยับเมาส์เพื่อไปกดอนุญาต'
+           : S.state === 'done' ? 'หน้าจอจะพักในอีก ' + Math.max(1, Math.ceil((S.doneUntil - now) / 60000)) + ' นาที'
+           : (onlyLocal ? 'ทำงานในเครื่อง ไม่ใช้ token' : 'ขยับเมาส์เพื่อกลับไปที่งาน') + ' · เครื่องจะไม่หลับจนกว่างานเสร็จ';
+  if (S.state !== shownState) {
+    shownState = S.state;
+    var cls = 'ch ' + S.state;
+    $('sc').setAttribute('class', cls); $('sg').setAttribute('class', cls);
+    if (S.state === 'work') restartCycle(); else { clearInterval(cycle); cycle = null; }
+  }
+  $('sc').style.display = S.agents.indexOf('claude') >= 0 || !S.agents.length ? '' : 'none';
+  $('sg').style.display = S.agents.indexOf('local') >= 0 ? '' : 'none';
+  $('t1').textContent = title();
+  $('t2').textContent = sub;
+  $('hint').textContent = hint;
+  var d = new Date();
+  $('clk').textContent = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+// ---------- เวลาจริง: กลางวัน / เช้า / เย็น / กลางคืน / ดึก ----------
+var forcedHour = null;   // ใช้ทดสอบ: setHour(23)
+function setHour(h) { forcedHour = h; applyTime(); }
+function applyTime() {
+  var h = forcedHour != null ? forcedHour : new Date().getHours();
+  var mode = h >= 22 || h < 5 ? 'late' : h >= 19 ? 'night' : h >= 17 ? 'dusk' : h >= 9 ? 'day' : 'morning';
+  // เปลี่ยนเฉพาะคลาสของฉาก ไม่ทับคลาสอื่น (recap, hot)
+  ['morning', 'day', 'dusk', 'night', 'late'].forEach(function (m) { document.body.classList.toggle(m, m === mode); });
+  $('sky').className = mode;
+}
+(function stars() {
+  var sky = $('sky'), seed = 7;
+  function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+  for (var i = 0; i < 46; i++) {
+    var d = document.createElement('div');
+    d.className = 'px';
+    d.style.left = (rnd() * 100) + '%'; d.style.top = (rnd() * 55) + '%';
+    d.style.animationDelay = (rnd() * 3.2) + 's';
+    d.style.opacity = .25 + rnd() * .5;
+    sky.appendChild(d);
+  }
+})();
+var starCss = document.createElement('style');
+starCss.textContent = '#sky .px{display:none}.night #sky .px,.late #sky .px{display:block}';
+document.head.appendChild(starCss);
+
+
+// ---------- โควตา Claude (แบตเตอรี่พิกเซล) ----------
+var KIND = {edit: ['แก้', '#D97757'], bash: ['รัน', '#5DCAA5'], read: ['อ่าน', '#888780'], search: ['ค้นหา', '#85B7EB'],
+            web: ['ค้นเว็บ', '#AFA9EC'], agent: ['ส่งงานให้ผู้ช่วย', '#FAC775'], tool: ['ใช้', '#B4B2A9']};
+function hhmm(ms) { var d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
+function renderQuota() {
+  var q = S.q, box = $('quota');
+  if (!q) { box.innerHTML = ''; document.body.classList.remove('hot'); return; }
+  var left = Math.max(0, 100 - q.u), col = q.u >= 85 ? '#E24B4A' : q.u >= 60 ? '#EF9F27' : '#5DCAA5', seg = Math.round(left / 10), cells = '';
+  for (var i = 0; i < 10; i++) cells += '<rect x="' + (2 + i * 3) + '" y="2" width="2.4" height="6" fill="' + (i < seg ? col : '#2C2C2A') + '"/>';
+  var bat = '<svg viewBox="0 0 36 10" shape-rendering="crispEdges"><rect x=".5" y=".5" width="32" height="9" fill="none" stroke="#5f5e5a"/><rect x="33" y="3" width="2.5" height="4" fill="#5f5e5a"/>' + cells + '</svg>';
+  var line1 = '<b>เหลือ ' + left + '%</b>' + (q.r > Date.now() ? ' · รีเซ็ต ' + hhmm(q.r) : '') + (q.est ? ' · ประมาณ' : '');
+  var line2 = q.w != null ? '<br>สัปดาห์นี้ใช้ไป ' + q.w + '%' : '';
+  box.innerHTML = bat + '<div>' + line1 + line2 + '</div>';
+  document.body.classList.toggle('hot', q.u >= 85);
+}
+
+// ---------- Claude กำลังทำอะไร (งานล่าสุด 3 อย่าง + ตัวนับ) ----------
+var lastActKey = '';
+function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
+function renderActs() {
+  var acts = S.acts || [], n = S.n || {}, box = $('acts');
+  if (S.state === 'wait' || (!acts.length && !Object.keys(n).length)) { box.innerHTML = ''; lastActKey = ''; return; }
+  var key = JSON.stringify(acts[0] || []), html = '';
+  if (S.state === 'work') {
+    acts.forEach(function (a, i) {
+      var k = KIND[a[0]] || KIND.tool;
+      html += '<div class="act' + (i === 0 ? ' now' + (key !== lastActKey && lastActKey ? ' fresh' : '') : '') + '"><i style="background:' + k[1] + '"></i>' + k[0] + (a[1] ? ' ' + esc(a[1]) : '') + '</div>';
+    });
+  }
+  // ตัวเลขคือจำนวนครั้ง (แก้ไฟล์เดิมซ้ำก็นับ)
+  var order = [['edit', 'แก้ไฟล์'], ['bash', 'รันคำสั่ง'], ['read', 'อ่านไฟล์'], ['search', 'ค้นหา'], ['web', 'ค้นเว็บ'], ['agent', 'ส่งงาน']], parts = [];
+  order.forEach(function (o) { if (n[o[0]]) parts.push(o[1] + ' ' + n[o[0]]); });
+  if (parts.length) html += '<div id="cnt">' + (S.state === 'done' ? 'งานนี้: ' : '') + parts.join(' · ') + '</div>';
+  box.innerHTML = html;
+  lastActKey = key;
+}
+
+// ---------- การ์ดสรุปตอนกลับมาที่เครื่อง ----------
+function awayText(sec) {
+  var m = Math.max(1, Math.round(sec / 60)), h = Math.floor(m / 60);
+  return h ? h + ' ชม.' + (m % 60 ? ' ' + (m % 60) + ' นาที' : '') : m + ' นาที';
+}
+function names(list) {
+  var seen = {}, out = [];
+  list.forEach(function (n) { if (n && !seen[n]) { seen[n] = 1; out.push(n); } });
+  return esc(out.slice(0, 3).join(', ') + (out.length > 3 ? ' และอีก ' + (out.length - 3) : ''));
+}
+function recap(o) {
+  var rows = '';
+  if (o.done.length) rows += '<div class="rr"><i style="background:#5DCAA5"></i>เสร็จ ' + o.done.length + ' งาน<span>' + names(o.done) + '</span></div>';
+  if (o.wait.length) rows += '<div class="rr"><i style="background:#EF9F27"></i>รออนุมัติ ' + o.wait.length + ' งาน<span>' + names(o.wait) + '</span></div>';
+  if (o.work) rows += '<div class="rr"><i style="background:#D97757"></i>ยังทำงานอยู่ ' + o.work + ' งาน</div>';
+  $('recap').innerHTML = '<h1>ระหว่างที่คุณไม่อยู่ ' + awayText(o.away) + '</h1>' + rows
+    + '<div id="rfoot"><span><kbd>Enter</kbd>ไปที่งาน</span><span><kbd>Esc</kbd>ปิด</span></div><div id="rbar"></div>';
+  document.body.classList.add('recap');
+}
+function update(o) { for (var k in o) S[k] = o[k]; if (!S.agents) S.agents = ['claude']; render(); renderQuota(); renderActs(); }
+applyTime(); setInterval(applyTime, 60000);
+paintAll();
+setInterval(render, 1000);
+render();
+</script>
+</body>
+</html>

@@ -69,10 +69,14 @@ final class OverlayViewModel: ObservableObject {
     /// True until the first frame after a (re)start arrives; drives the
     /// one-shot loading indicator so the live overlay doesn't flicker.
     @Published private(set) var awaitingFirstFrame = true
-    @Published private(set) var isLensVisible = true
+    // Lens starts OFF: no capture until the user explicitly enables it
+    // (menu toggle or hotkey) — never auto-start on launch/login.
+    @Published private(set) var isLensVisible = false
     /// Mouse is over the lens (tracked by DragContainerView); reveals the
     /// hover-only controls.
     @Published private(set) var isHovering = false
+    /// Same, for the separate reader window.
+    @Published private(set) var isReaderHovering = false
     /// Alpha of the glass background (0 = fully see-through, 1 = full HUD
     /// material). Persisted across launches.
     @Published var glassOpacity: Double {
@@ -112,19 +116,62 @@ final class OverlayViewModel: ObservableObject {
     /// Non-fatal translation problem to surface in the lens without clearing
     /// the last good translation.
     @Published private(set) var translationNote: String?
+    /// Lines found in the most recent frame; drives the lens header readout.
+    @Published private(set) var recognizedLineCount = 0
+
+    /// What the lens border and header report at a glance, so a see-through
+    /// frame doesn't leave the user guessing whether anything is happening.
+    enum LensSignal {
+        case translating
+        case idle
+        case noText
+        case warning
+    }
+
+    var lensSignal: LensSignal {
+        switch status {
+        case .needsPermission, .failed:
+            return .warning
+        case .paused:
+            return .idle
+        case .starting:
+            return awaitingFirstFrame ? .idle : .translating
+        case .running:
+            if translationNote != nil { return .warning }
+            return recognizedLineCount > 0 ? .translating : .noText
+        }
+    }
+
+    /// Opens the shared controls popover next to the lens — the menu bar icon
+    /// can be buried under the notch, so the lens carries its own way in.
+    var openSettingsHandler: (() -> Void)?
 
     private static let glassOpacityKey = "glassOpacity"
     private static let textScaleKey = "textScale"
     private static let onlineTranslationKey = "useOnlineTranslation"
+
+    /// Thai-first OCR is only safe when Chinese can't be on screen.
+    var ocrThaiFirst: Bool { directionOverride == .forceEnToThai || directionOverride == .forceThaiToEn }
     private static let arModeKey = "arModeEnabled"
     private static let directionOverrideKey = "directionOverride"
     static let lensFrameKey = "lensFrame"
+    static let readerFrameKey = "readerFrame"
+    private static let readerVisibleKey = "readerVisible"
 
-    /// Supplied by AppDelegate; returns the panel's current frame in global
-    /// screen coordinates.
+    /// The reader is the second window: the clear lens marks *what* to
+    /// translate, this one shows the translated text somewhere out of the way.
+    @Published private(set) var isReaderVisible: Bool {
+        didSet { UserDefaults.standard.set(isReaderVisible, forKey: Self.readerVisibleKey) }
+    }
+
+    /// Supplied by AppDelegate; returns the capture frame's rect in global
+    /// screen coordinates. This is the region that gets captured.
     var panelFrameProvider: () -> NSRect = { .zero }
     /// Supplied by AppDelegate; orders the panel in or out.
     var panelVisibilityHandler: ((Bool) -> Void)?
+    /// Same pair for the reader window.
+    var readerFrameProvider: () -> NSRect = { .zero }
+    var readerVisibilityHandler: ((Bool) -> Void)?
 
     private let engine = CaptureEngine()
     private var restartTask: Task<Void, Never>?
@@ -150,6 +197,7 @@ final class OverlayViewModel: ObservableObject {
         arModeEnabled = UserDefaults.standard.object(forKey: Self.arModeKey) as? Bool ?? false
         directionOverride = UserDefaults.standard.string(forKey: Self.directionOverrideKey)
             .flatMap(DirectionOverride.init(rawValue:)) ?? .auto
+        isReaderVisible = UserDefaults.standard.object(forKey: Self.readerVisibleKey) as? Bool ?? true
 
         engine.onFrame = { [weak self] image in
             // Runs on the capture queue: keep OCR off the main thread. A nil
@@ -218,16 +266,30 @@ final class OverlayViewModel: ObservableObject {
         }
     }
 
+    func setReaderHovering(_ hovering: Bool) {
+        if isReaderHovering != hovering {
+            isReaderHovering = hovering
+        }
+    }
+
+    /// Shows/hides the reader window on its own. The lens keeps capturing
+    /// either way — in AR mode the translation is drawn in the clear lens, so
+    /// the reader is optional.
+    func setReaderVisible(_ visible: Bool) {
+        guard visible != isReaderVisible else { return }
+        isReaderVisible = visible
+        readerVisibilityHandler?(visible && isLensVisible)
+    }
+
     func setLensVisible(_ visible: Bool) {
         guard visible != isLensVisible else { return }
         isLensVisible = visible
         panelVisibilityHandler?(visible)
+        readerVisibilityHandler?(visible && isReaderVisible)
         if visible {
-            if status == .needsPermission {
-                checkPermissionAndStart()
-            } else {
-                startCapture(after: .zero)
-            }
+            // Permission preflight happens here (first enable) rather than at
+            // launch, since the lens no longer auto-starts.
+            checkPermissionAndStart()
         } else {
             restartTask?.cancel()
             if status != .needsPermission {
@@ -263,6 +325,14 @@ final class OverlayViewModel: ObservableObject {
         let frame = panelFrameProvider()
         guard frame.width > 0, frame.height > 0 else { return }
         UserDefaults.standard.set(NSStringFromRect(frame), forKey: Self.lensFrameKey)
+    }
+
+    /// Moving the reader doesn't touch the capture region, so it only needs
+    /// its frame remembered — no capture restart.
+    func readerMoved() {
+        let frame = readerFrameProvider()
+        guard frame.width > 0, frame.height > 0 else { return }
+        UserDefaults.standard.set(NSStringFromRect(frame), forKey: Self.readerFrameKey)
     }
 
     // MARK: - Capture lifecycle
@@ -341,6 +411,23 @@ final class OverlayViewModel: ObservableObject {
         preparedSessionKeys.remove(key)
     }
 
+    /// The view's translationTask sessions only exist once the lens has been
+    /// shown, and the screen picker (⌥⌘T) usually runs with it hidden — so
+    /// without this the fallback had nothing to fall back to. From macOS 26 a
+    /// session for already-installed languages can be made directly.
+    private func installedSession(source: String, target: String) -> TranslationSession? {
+        guard #available(macOS 26.0, *) else { return nil }
+        let key = "\(source)-\(target)"
+        let session = TranslationSession(
+            installedSource: Locale.Language(identifier: source),
+            target: Locale.Language(identifier: target)
+        )
+        translationSessions[key] = session
+        // Installed languages need no download prompt.
+        preparedSessionKeys.insert(key)
+        return session
+    }
+
     /// Parks for the life of the enclosing translationTask so the attached
     /// session isn't invalidated; exits promptly on cancellation.
     func keepSessionAlive() async {
@@ -354,6 +441,7 @@ final class OverlayViewModel: ObservableObject {
             awaitingFirstFrame = false
             log.info("first frame after (re)start: lines=\(lines?.count ?? -1, privacy: .public)")
         }
+        recognizedLineCount = lines?.count ?? 0
         guard let lines, !lines.isEmpty else { return }
 
         if arModeEnabled {
@@ -396,6 +484,9 @@ final class OverlayViewModel: ObservableObject {
                 boundingBox: line.boundingBox
             )
         }
+        // The reader window reads from translatedText, so AR mode has to feed
+        // it too — otherwise lens 2 sits empty whenever AR mode is on.
+        syncReaderTextFromSegments()
 
         for line in lines where lineTranslationCache[line.text] == nil && !inFlightLineTexts.contains(line.text) {
             inFlightLineTexts.insert(line.text)
@@ -410,7 +501,21 @@ final class OverlayViewModel: ObservableObject {
                 for i in self.arSegments.indices where self.arSegments[i].originalText == text {
                     self.arSegments[i].displayText = result
                 }
+                self.syncReaderTextFromSegments()
             }
+        }
+    }
+
+    /// AR segments are already translated line by line; joining them keeps the
+    /// reader window (and the copy button) useful in AR mode.
+    private func syncReaderTextFromSegments() {
+        guard arModeEnabled else { return }
+        let joined = arSegments
+            .map(\.displayText)
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .joined(separator: "\n")
+        if joined != translatedText {
+            translatedText = joined
         }
     }
 
@@ -419,7 +524,7 @@ final class OverlayViewModel: ObservableObject {
     /// Thai -> English, Chinese -> Thai, anything else -> Thai. The override
     /// is a manual escape hatch for short or ambiguous text (brand names,
     /// numbers, loanwords) that auto-detection occasionally guesses wrong.
-    private func effectivePair(for text: String) -> (source: String, target: String) {
+    func effectivePair(for text: String) -> (source: String, target: String) {
         if let pair = directionOverride.pair { return pair }
         switch DetectedSourceLanguage.detect(for: text) {
         case .thai: return ("th", "en")
@@ -431,7 +536,7 @@ final class OverlayViewModel: ObservableObject {
     /// Tries the online translator first (when enabled), then falls back to
     /// whichever on-device Apple session matches the requested pair.
     /// Returns nil if both fail or no fallback session is ready yet.
-    private func translateWithFallback(_ text: String, source: String, target: String) async -> String? {
+    func translateWithFallback(_ text: String, source: String, target: String) async -> String? {
         if useOnlineTranslation {
             do {
                 // Force the explicit source we already detected rather than
@@ -450,7 +555,7 @@ final class OverlayViewModel: ObservableObject {
         }
 
         let key = "\(source)-\(target)"
-        guard let session = translationSessions[key] else { return nil }
+        guard let session = translationSessions[key] ?? installedSession(source: source, target: target) else { return nil }
         do {
             if !preparedSessionKeys.contains(key) {
                 try await session.prepareTranslation()

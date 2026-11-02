@@ -1,0 +1,1 @@
+../../OverlayLens/ClaudeAutopilot.swift

@@ -9,3 +9,6 @@ EchoNote/testdata/fixture-th.wav
 
 # Old copies of files kept by hand while reworking them
 .backup/
+
+# Built installer, rebuilt by DropShelf/build.sh
+DropShelf/dist/

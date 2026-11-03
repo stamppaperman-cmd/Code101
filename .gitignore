@@ -12,3 +12,6 @@ EchoNote/testdata/fixture-th.wav
 
 # Built installer, rebuilt by DropShelf/build.sh
 DropShelf/dist/
+
+# สำรองโปรเจกต์อื่นที่เผลอวางไว้ที่ราก — ย้ายไป ~/Claude/Projects/roomtwin-backup/ แล้ว
+RoomTwin-*.zip

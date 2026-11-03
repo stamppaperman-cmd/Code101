@@ -154,9 +154,11 @@ struct ClaudeAlwaysAllowTests {
         let update = try #require(updates.first)
         #expect(update["type"] as? String == "addRules")
         #expect(update["behavior"] as? String == "allow")
-        // localSettings = Claude Code writes .claude/settings.local.json itself;
+        // userSettings = Claude Code writes ~/.claude/settings.json itself, so
+        // the rule holds in every project and every chat — a chat opened with
+        // no folder used to save it into a scratch folder that gets deleted.
         // StampLab never edits that file to add a rule.
-        #expect(update["destination"] as? String == "localSettings")
+        #expect(update["destination"] as? String == "userSettings")
         let sent = try #require(update["rules"] as? [[String: String]])
         #expect(sent == [["toolName": "Bash", "ruleContent": "npm run test:*"]])
     }
@@ -216,7 +218,7 @@ struct ClaudeAlwaysAllowTests {
         #expect(ClaudeApproval.settingsRemoving(rule: "Bash(ls:*)", from: ["permissions": [:]]) == nil)
     }
 
-    @Test("กฎที่บันทึกไว้ รู้ว่าอยู่โปรเจกต์ไหน และซ้ำกันไม่ได้")
+    @Test("กฎที่บันทึกไว้ รู้ว่ามาจากโปรเจกต์ไหน และกฎเดียวกันนับครั้งเดียวทั้งเครื่อง")
     func savedRuleIdentity() {
         let a = ClaudeApproval.SavedRule(
             toolName: "Bash", ruleContent: "ls:*", project: "/Users/x/Code101/OverlayLens", added: 1)
@@ -227,7 +229,9 @@ struct ClaudeAlwaysAllowTests {
         #expect(a.display == "Bash(ls:*)")
         #expect(a.projectName == "OverlayLens")
         #expect(a.id == b.id)
-        #expect(a.id != other.id)
+        // กฎไปอยู่ที่ ~/.claude/settings.json แล้ว กฎเดียวกันจากคนละโปรเจกต์
+        // จึงเป็นกฎข้อเดียว ไม่ใช่สองข้อที่ลบแล้วเหลือรายการค้าง
+        #expect(a.id == other.id)
     }
 
     // Only the project's own settings file — never StampLab's live record,
@@ -245,7 +249,9 @@ struct ClaudeAlwaysAllowTests {
         ]
         try JSONSerialization.data(withJSONObject: before).write(to: settings)
 
-        #expect(ClaudeApproval.removeRuleFromSettings("Bash(npm run test:*)", project: project.path))
+        #expect(ClaudeApproval.removeRuleFromSettings(
+            "Bash(npm run test:*)", project: project.path,
+            userSettings: project.appendingPathComponent("no-user-settings.json")))
 
         let root = try #require(try JSONSerialization.jsonObject(
             with: try Data(contentsOf: settings)) as? [String: Any])
@@ -261,10 +267,62 @@ struct ClaudeAlwaysAllowTests {
         let project = fm.temporaryDirectory.appendingPathComponent("stamplab-rules-\(UUID().uuidString)")
         try fm.createDirectory(at: project.appendingPathComponent(".claude"), withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: project) }
-        #expect(!ClaudeApproval.removeRuleFromSettings("Bash(ls:*)", project: project.path))
+        let noUser = project.appendingPathComponent("no-user-settings.json")
+        #expect(!ClaudeApproval.removeRuleFromSettings(
+            "Bash(ls:*)", project: project.path, userSettings: noUser))
         try JSONSerialization.data(withJSONObject: ["permissions": ["allow": ["Bash(ls:*)"]]])
             .write(to: ClaudeApproval.localSettingsURL(project: project.path))
-        #expect(!ClaudeApproval.removeRuleFromSettings("Bash(อื่น:*)", project: project.path))
+        #expect(!ClaudeApproval.removeRuleFromSettings(
+            "Bash(อื่น:*)", project: project.path, userSettings: noUser))
+    }
+
+    /// กฎใหม่ทุกข้ออยู่ที่ ~/.claude/settings.json ไม่ใช่ไฟล์ของโปรเจกต์
+    @Test("ลบกฎออกจากไฟล์ตั้งค่าระดับเครื่องได้ โดยค่าอื่นในไฟล์ไม่หาย")
+    func removeRuleRewritesUserSettings() throws {
+        let fm = FileManager.default
+        let folder = fm.temporaryDirectory.appendingPathComponent("stamplab-user-\(UUID().uuidString)")
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: folder) }
+        let userSettings = folder.appendingPathComponent("settings.json")
+        try JSONSerialization.data(withJSONObject: [
+            "permissions": ["allow": ["Bash(ls:*)", "Bash(git log:*)"], "defaultMode": "auto"],
+            "hooks": ["PermissionRequest": "ของระบบอื่น ห้ามหาย"],
+        ]).write(to: userSettings)
+
+        #expect(ClaudeApproval.removeRuleFromSettings(
+            "Bash(git log:*)", project: folder.path, userSettings: userSettings))
+
+        let root = try #require(try JSONSerialization.jsonObject(
+            with: try Data(contentsOf: userSettings)) as? [String: Any])
+        let permissions = try #require(root["permissions"] as? [String: Any])
+        #expect(permissions["allow"] as? [String] == ["Bash(ls:*)"])
+        #expect(permissions["defaultMode"] as? String == "auto")
+        #expect(root["hooks"] as? [String: String] == ["PermissionRequest": "ของระบบอื่น ห้ามหาย"])
+    }
+
+    /// กฎเก่าที่เคยบันทึกไว้รายโปรเจกต์ ต้องถูกลบด้วย ไม่งั้นกดลบแล้วยังไม่ถามเหมือนเดิม
+    @Test("ลบกฎครั้งเดียว เคลียร์ทั้งไฟล์ระดับเครื่องและไฟล์เก่าของโปรเจกต์")
+    func removeRuleClearsBothFiles() throws {
+        let fm = FileManager.default
+        let project = fm.temporaryDirectory.appendingPathComponent("stamplab-both-\(UUID().uuidString)")
+        try fm.createDirectory(at: project.appendingPathComponent(".claude"), withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: project) }
+        let userSettings = project.appendingPathComponent("settings.json")
+        let rule = "Bash(npm run *)"
+        try JSONSerialization.data(withJSONObject: ["permissions": ["allow": [rule]]])
+            .write(to: userSettings)
+        try JSONSerialization.data(withJSONObject: ["permissions": ["allow": [rule, "Bash(ls:*)"]]])
+            .write(to: ClaudeApproval.localSettingsURL(project: project.path))
+
+        #expect(ClaudeApproval.removeRuleFromSettings(
+            rule, project: project.path, userSettings: userSettings))
+
+        for url in [userSettings, ClaudeApproval.localSettingsURL(project: project.path)] {
+            let root = try #require(try JSONSerialization.jsonObject(
+                with: try Data(contentsOf: url)) as? [String: Any])
+            let allow = try #require((root["permissions"] as? [String: Any])?["allow"] as? [String])
+            #expect(!allow.contains(rule))
+        }
     }
 
     /// Claude Code saves a session's rules at the repository root, so a
@@ -284,7 +342,9 @@ struct ClaudeAlwaysAllowTests {
         ]).write(to: settings)
 
         #expect(ClaudeApproval.settingsRoot(project: sub.path).path == root.standardizedFileURL.path)
-        #expect(ClaudeApproval.removeRuleFromSettings("Bash(npm run *)", project: sub.path))
+        #expect(ClaudeApproval.removeRuleFromSettings(
+            "Bash(npm run *)", project: sub.path,
+            userSettings: root.appendingPathComponent("no-user-settings.json")))
 
         let saved = try #require(try JSONSerialization.jsonObject(
             with: try Data(contentsOf: settings)) as? [String: Any])

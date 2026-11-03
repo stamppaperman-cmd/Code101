@@ -166,9 +166,11 @@ enum ClaudeApproval {
 
     /// The hook's stdout, per the PermissionRequest decision-control format.
     /// `.always` allows and sends the rules back as a permission update bound
-    /// for `localSettings`, so Claude Code writes them into the project's
-    /// `.claude/settings.local.json` itself — StampLab never edits that file
-    /// to add a rule.
+    /// for `userSettings`, so Claude Code writes them into `~/.claude/
+    /// settings.json` itself — StampLab never edits that file to add a rule.
+    /// Machine-wide rather than per project: a chat opened with no folder runs
+    /// in a scratch folder that is deleted with the chat, so a rule saved
+    /// there was thrown away and the same command asked again every time.
     static func decisionJSON(_ answer: Answer, rules: [Rule] = []) -> Data {
         var decision: [String: Any] = ["behavior": answer == .deny ? "deny" : "allow"]
         switch answer {
@@ -180,7 +182,7 @@ enum ClaudeApproval {
             decision["updatedPermissions"] = [[
                 "type": "addRules",
                 "behavior": "allow",
-                "destination": "localSettings",
+                "destination": "userSettings",
                 "rules": rules.map { ["toolName": $0.toolName, "ruleContent": $0.ruleContent] },
             ]]
         case .always:
@@ -225,15 +227,18 @@ enum ClaudeApproval {
     struct SavedRule: Codable, Equatable, Identifiable {
         let toolName: String
         let ruleContent: String
-        /// The project folder, so the undo knows which settings file to edit.
+        /// The project the rule was saved from. Kept for the list to show
+        /// where it came from, and so an undo also clears rules saved back
+        /// when they went into the project's own settings file.
         let project: String
         let added: Double
 
         var rule: Rule { Rule(toolName: toolName, ruleContent: ruleContent) }
         var display: String { rule.display }
         var projectName: String { (project as NSString).lastPathComponent }
-        /// One rule per project: saving it twice is the same entry.
-        var id: String { project + "|" + display }
+        /// One entry per rule: rules are machine-wide, so saving the same one
+        /// from another project is the same rule, not a second one.
+        var id: String { display }
     }
 
     static func savedRules() -> [SavedRule] {
@@ -299,12 +304,14 @@ enum ClaudeApproval {
         settingsRoot(project: project).appendingPathComponent(".claude/settings.local.json")
     }
 
-    /// Takes the rule out of the project's `.claude/settings.local.json`,
-    /// which is what makes Claude Code ask about that command again. True when
-    /// the file was rewritten.
+    /// Claude Code's own settings for this Mac, where "อนุญาตเสมอ" rules go so
+    /// one answer covers every project and every chat.
+    static let userSettingsURL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".claude/settings.json")
+
+    /// Takes the rule out of one settings file. True when it was rewritten.
     @discardableResult
-    static func removeRuleFromSettings(_ rule: String, project: String) -> Bool {
-        let url = localSettingsURL(project: project)
+    static func removeRule(_ rule: String, fromFileAt url: URL) -> Bool {
         guard let data = try? Data(contentsOf: url),
               let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let updated = settingsRemoving(rule: rule, from: root),
@@ -314,7 +321,23 @@ enum ClaudeApproval {
         return (try? out.write(to: url, options: .atomic)) != nil
     }
 
-    /// Drops the rule from StampLab's record and from the project's settings.
+    /// Takes the rule out of `~/.claude/settings.json`, which is what makes
+    /// Claude Code ask about that command again. Rules saved before the switch
+    /// to machine-wide sit in the project's `.claude/settings.local.json`, so
+    /// that file is cleared too — otherwise an undo would look like it worked
+    /// while the old rule kept allowing the command. True when either file was
+    /// rewritten. `userSettings` is a parameter only so the tests can aim it
+    /// at a temporary file instead of the real one.
+    @discardableResult
+    static func removeRuleFromSettings(
+        _ rule: String, project: String, userSettings: URL = userSettingsURL
+    ) -> Bool {
+        let fromUser = removeRule(rule, fromFileAt: userSettings)
+        let fromProject = removeRule(rule, fromFileAt: localSettingsURL(project: project))
+        return fromUser || fromProject
+    }
+
+    /// Drops the rule from StampLab's record and from the settings files.
     static func forget(_ entry: SavedRule) {
         var list = savedRules()
         list.removeAll { $0.id == entry.id }

@@ -251,6 +251,6 @@ private struct ClaudeApprovalCard: View {
             .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
         }
         .buttonStyle(CardButtonStyle(fill: Color.white.opacity(0.1)))
-        .help("บันทึกกฎนี้ลง .claude/settings.local.json ของโปรเจกต์ ลบได้จากเมนู StampLab")
+        .help("บันทึกกฎนี้ลง ~/.claude/settings.json ใช้ได้ทุกโปรเจกต์ทุกแชต ลบได้จากเมนู StampLab")
     }
 }

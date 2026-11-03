@@ -47,6 +47,9 @@ final class ClaudeAmbientController: NSObject, WKNavigationDelegate {
     private var awakeAssertion: IOPMAssertionID = 0
     private var previousApp: NSRunningApplication?
     private var threshold: Double = 570
+    /// ระหว่างทดสอบ ไม่ให้ refreshThreshold ทับค่าที่ย่อไว้ (ดู beginIdleTest)
+    private var idleTestUntil: Date = .distantPast
+    private static let idleTestThreshold: Double = 15
     private var lastPayload = ""
     private var pendingPayload = ""
     private var ticks = 0
@@ -80,6 +83,19 @@ final class ClaudeAmbientController: NSObject, WKNavigationDelegate {
         ) { [weak self] _ in
             Task { @MainActor in self?.testRecap() }
         }
+        // ทดสอบว่าหน้าจอพักขึ้นเองจริง: post "com.stamp.StampLab.ambientIdleTest"
+        // แล้วปล่อยมือ ~20 วินาที — เดินเส้นทางจริง (ไม่ใช่ preview) แค่ย่อเวลารอ
+        DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.stamp.StampLab.ambientIdleTest"), object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.beginIdleTest() }
+        }
+    }
+
+    /// ย่อเวลารอเป็น 15 วินาทีชั่วคราว 3 นาที แล้วคืนค่าเดิมเอง
+    private func beginIdleTest() {
+        idleTestUntil = Date().addingTimeInterval(180)
+        threshold = Self.idleTestThreshold
     }
 
     private var enabled: Bool { UserDefaults.standard.bool(forKey: Self.enabledKey) }
@@ -132,6 +148,7 @@ final class ClaudeAmbientController: NSObject, WKNavigationDelegate {
 
     /// Show 30 s before the system would blank the display; 5 min if it never does.
     private func refreshThreshold() {
+        guard Date() >= idleTestUntil else { return }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
         p.arguments = ["-g"]
@@ -160,6 +177,11 @@ final class ClaudeAmbientController: NSObject, WKNavigationDelegate {
 
     private func tick() {
         ticks += 1
+        // หมดเวลาทดสอบแล้ว: คืนเวลารอตามค่าจอดับจริง
+        if idleTestUntil != .distantPast, Date() >= idleTestUntil {
+            idleTestUntil = .distantPast
+            refreshThreshold()
+        }
         if ticks % 600 == 0 { refreshThreshold() }   // every 5 min
         let now = Date().timeIntervalSince1970
         if ticks % 4 == 1 { pollImageGen(now: now) }   // every 2 s

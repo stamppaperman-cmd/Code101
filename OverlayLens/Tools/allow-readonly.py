@@ -25,8 +25,11 @@ READ_ONLY = [
     "Bash(file:*)", "Bash(stat:*)", "Bash(du:*)", "Bash(df:*)", "Bash(tree:*)",
     "Bash(realpath:*)", "Bash(basename:*)", "Bash(dirname:*)", "Bash(readlink:*)",
     # ค้นหาและอ่านเนื้อหา
-    "Bash(grep:*)", "Bash(egrep:*)", "Bash(rg:*)", "Bash(find:*)", "Bash(sed -n:*)",
-    "Bash(awk:*)", "Bash(sort:*)", "Bash(uniq:*)", "Bash(cut:*)", "Bash(tr:*)",
+    # find และ awk ไม่อยู่ในชุดนี้: find มี -delete กับ -exec และ awk เขียนไฟล์
+    # เองได้ด้วย print > "ไฟล์" กับ system() กฎ Bash(...:*) แยกสองอย่างนั้นออก
+    # จากการใช้อ่านเฉย ๆ ไม่ได้ จึงปล่อยให้ถามตามปกติ (ค้นไฟล์ใช้ rg แทนได้)
+    "Bash(grep:*)", "Bash(egrep:*)", "Bash(rg:*)", "Bash(sed -n:*)",
+    "Bash(sort:*)", "Bash(uniq:*)", "Bash(cut:*)", "Bash(tr:*)",
     "Bash(diff:*)", "Bash(jq:*)", "Bash(plutil -p:*)",
     # สถานะเครื่อง
     "Bash(pgrep:*)", "Bash(ps:*)", "Bash(pmset -g:*)", "Bash(ioreg:*)",
